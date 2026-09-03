@@ -172,10 +172,19 @@ async function saveVoicemail(params: SaveVoicemailParams): Promise<NextResponse>
         .limit(1)
         .single()
 
+    // Resolve org so org_admins get oversight visibility (see
+    // supabase-migration-004-multi-tenant.sql).
+    const { data: membership } = await supabase
+        .from('organization_members')
+        .select('org_id')
+        .eq('user_id', targetUserId)
+        .maybeSingle()
+
     const { error } = await supabase
         .from('call_recordings')
         .insert({
             user_id: targetUserId,
+            org_id: membership?.org_id || null,
             phone_number: numberData?.phone_number || '',
             caller_number: params.callerNumber || 'Unknown Caller',
             recording_url: params.recordingUrl,

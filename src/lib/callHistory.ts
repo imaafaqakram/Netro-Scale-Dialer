@@ -36,12 +36,25 @@ export async function upsertCallHistory(
 ): Promise<void> {
     if (!params.callSid || !params.userId) return;
 
+    // Resolve the caller's org so org_admins get oversight visibility into this
+    // row (see supabase-migration-004-multi-tenant.sql's "Org admins view
+    // their org's call history" policy, which is scoped by org_id). Missing
+    // membership (not migrated yet, or a 'user' placeholder id) isn't an
+    // error — the row still saves, just without org-level visibility until
+    // that's resolved.
+    const { data: membership } = await supabase
+        .from('organization_members')
+        .select('org_id')
+        .eq('user_id', params.userId)
+        .maybeSingle();
+
     const { error } = await supabase
         .from('call_history')
         .upsert(
             {
                 call_sid: params.callSid,
                 user_id: params.userId,
+                org_id: membership?.org_id || null,
                 direction: params.direction,
                 phone_number: params.phoneNumber || 'Unknown',
                 lead_name: params.leadName || null,

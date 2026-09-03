@@ -63,15 +63,21 @@ Create a project at [supabase.com](https://supabase.com) and note:
 
 ### 2.2 Run Database Migration
 
-Go to **SQL Editor** and run the contents of `supabase-migration.sql`, then
-`supabase-migration-002-fixes.sql`, then `supabase-migration-003-call-history.sql`,
-in that order. Each file is idempotent (safe to re-run).
+Go to **SQL Editor** and run these files in order — each is idempotent (safe to
+re-run):
+
+1. `supabase-migration.sql`
+2. `supabase-migration-002-fixes.sql`
+3. `supabase-migration-003-call-history.sql`
+4. `supabase-migration-004-multi-tenant.sql`
 
 This creates:
 - `user_phone_numbers` table (with voice feature columns)
 - `call_recordings` table (for recordings & voicemails)
 - `call_history` table (permanent server-side call log)
-- RLS policies for security
+- `organizations` / `organization_members` / `super_admins` tables (multi-tenant
+  roles — see 2.5 below)
+- RLS policies for security, scoped per-organization
 
 > **If you already ran `supabase-migration.sql` before today:** you must also run
 > `supabase-migration-002-fixes.sql` — it fixes a schema bug where every normal
@@ -81,18 +87,51 @@ This creates:
 
 ### 2.3 Create Users
 
-Go to **Authentication → Users → Add User** to create email/password accounts.
+Go to **Authentication → Users → Add User** to create email/password accounts —
+or, once 2.5 below is done, invite them from the app's **Admin** page instead.
 
 ### 2.4 Assign Phone Numbers
 
-In **Table Editor → user_phone_numbers**, insert rows:
+Once you have at least one org_admin (see 2.5), assign numbers from the app's
+**Admin** page instead of by hand. To do it manually anyway (e.g. before any
+admin exists), insert rows in **Table Editor → user_phone_numbers**:
 
 | Column | Example |
 |---|---|
 | `user_id` | User's UUID from Auth |
+| `org_id` | The organization's UUID from the `organizations` table |
 | `phone_number` | `+13072075599` |
 | `friendly_name` | `Main Line` |
 | `is_default` | `true` |
+
+### 2.5 Bootstrap Multi-Tenant Roles
+
+`supabase-migration-004-multi-tenant.sql` adds organizations, per-org roles
+(`org_admin` / `agent`), and a platform-wide `super_admin` role — see the
+comment block at the top of that file for the full model. It automatically
+migrates any users that already existed before you ran it into one "Default
+Organization" as `org_admin`, so nobody who could already manage their own
+numbers loses access.
+
+There's one step it **cannot** do for you: granting the very first
+`super_admin`. Nothing in the app can grant that role to itself — it has to be
+inserted directly. In **SQL Editor**, run once (with your own user's UUID from
+**Authentication → Users**):
+
+```sql
+insert into super_admins (user_id) values ('YOUR-USER-UUID-HERE');
+```
+
+After that, log in and you'll see an **Admin** link (if you're an `org_admin`
+of some organization) and a **Super Admin** link (platform-wide) in the
+sidebar. From Super Admin you can create new organizations (each with its own
+first `org_admin`, invited by email); from Admin, an `org_admin` invites
+`agent`s into their own organization and assigns them phone numbers.
+
+**Known limitation:** an organization's `suspended` flag (toggle in Super
+Admin) is currently a record-keeping flag only — it does not yet block that
+organization's users from logging in or making calls. Enforcing it is a
+follow-up, not yet wired into `middleware.ts` or the Twilio webhooks.
 
 ---
 
