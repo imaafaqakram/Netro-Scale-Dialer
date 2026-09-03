@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase';
 import { AppLayout } from '@/components/Layout';
+import { useAccessibility } from '@/contexts/AccessibilityContext';
 import { DEFAULT_SYSTEM_PROMPT, DEFAULT_AI_CONFIG, generateInitialGreeting } from '@/lib/ai/prompts';
+import type { AccessibilityPreferences } from '@/types';
 import styles from './page.module.css';
 
 interface PhoneNumber {
@@ -24,6 +26,7 @@ interface AISettings {
     cerebras_api_key: string;
     deepgram_api_key: string;
     cartesia_api_key: string;
+    google_sheet_id: string;
     ai_voice: string;
     greeting_message: string;
     system_prompt: string;
@@ -32,6 +35,7 @@ interface AISettings {
 }
 
 export default function SettingsPage() {
+    const { preferences: accessibilityPreferences, setTheme } = useAccessibility();
     const [user, setUser] = useState<{ email?: string | null } | null>(null);
     const [numbers, setNumbers] = useState<PhoneNumber[]>([]);
     const [selectedNumber, setSelectedNumber] = useState<string>('');
@@ -52,6 +56,7 @@ export default function SettingsPage() {
         cerebras_api_key: '',
         deepgram_api_key: '',
         cartesia_api_key: '',
+        google_sheet_id: '',
         ai_voice: 'Polly.Danielle-Neural',
         greeting_message: generateInitialGreeting(),
         system_prompt: DEFAULT_SYSTEM_PROMPT,
@@ -228,6 +233,31 @@ export default function SettingsPage() {
                                 </div>
                             </div>
 
+                            <div className={styles.formRow}>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.settingLabel}>Deepgram API Key (Call Transcription)</label>
+                                    <input
+                                        type="password"
+                                        className={styles.inputField}
+                                        placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                                        value={aiSettings.deepgram_api_key}
+                                        onChange={(e) => setAiSettings({ ...aiSettings, deepgram_api_key: e.target.value })}
+                                    />
+                                    <span className={styles.inputHelp}>Transcribes call recordings &amp; voicemails for the CRM sheet. Falls back to a self-hosted Whisper endpoint if configured server-side.</span>
+                                </div>
+                                <div className={styles.formGroup}>
+                                    <label className={styles.settingLabel}>Google Sheet ID (CRM)</label>
+                                    <input
+                                        type="text"
+                                        className={styles.inputField}
+                                        placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+                                        value={aiSettings.google_sheet_id}
+                                        onChange={(e) => setAiSettings({ ...aiSettings, google_sheet_id: e.target.value })}
+                                    />
+                                    <span className={styles.inputHelp}>The ID from your sheet&apos;s URL — share the sheet with the service account email first. See SETUP_GUIDE.md.</span>
+                                </div>
+                            </div>
+
                             {/* Voice Picker */}
                             <div className={styles.setting}>
                                 <div className={styles.settingInfo}>
@@ -386,7 +416,11 @@ export default function SettingsPage() {
                                     <span className={styles.settingLabel}>Theme</span>
                                     <span className={styles.settingDesc}>Choose your preferred color theme</span>
                                 </div>
-                                <select className={styles.select}>
+                                <select
+                                    className={styles.select}
+                                    value={accessibilityPreferences.theme}
+                                    onChange={(e) => setTheme(e.target.value as AccessibilityPreferences['theme'])}
+                                >
                                     <option value="light">Light</option>
                                     <option value="dark">Dark</option>
                                     <option value="system">System</option>

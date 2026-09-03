@@ -12,6 +12,7 @@ export interface LiveAICall {
     to: string;
     from: string;
     leadName?: string;
+    leadEmail?: string;
     leadId?: string;
     status: 'initiated' | 'ringing' | 'in-progress' | 'completed' | 'busy' | 'no-answer' | 'failed' | 'canceled' | 'voicemail';
     answeredBy?: 'human' | 'machine_start' | 'machine_end_beep' | 'machine_end_silence' | 'fax' | 'unknown';
@@ -44,6 +45,7 @@ export function registerCall(params: {
     to: string;
     from: string;
     leadName?: string;
+    leadEmail?: string;
     leadId?: string;
 }): LiveAICall {
     const now = Date.now();
@@ -53,6 +55,7 @@ export function registerCall(params: {
         to: params.to,
         from: params.from,
         leadName: params.leadName || '',
+        leadEmail: params.leadEmail || '',
         leadId: params.leadId || '',
         status: 'initiated',
         duration: 0,

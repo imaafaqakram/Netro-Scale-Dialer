@@ -8,6 +8,7 @@ interface UserAISettings {
     cerebras_api_key: string;
     deepgram_api_key: string;
     cartesia_api_key: string;
+    google_sheet_id: string;
     ai_voice: string;
     greeting_message: string;
     system_prompt: string;
@@ -20,6 +21,7 @@ const DEFAULT_AI_SETTINGS: UserAISettings = {
     cerebras_api_key: '',
     deepgram_api_key: '',
     cartesia_api_key: '',
+    google_sheet_id: '',
     ai_voice: 'Polly.Joanna',
     greeting_message: generateInitialGreeting(),
     system_prompt: DEFAULT_SYSTEM_PROMPT,

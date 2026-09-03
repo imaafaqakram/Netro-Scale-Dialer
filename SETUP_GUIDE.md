@@ -63,12 +63,21 @@ Create a project at [supabase.com](https://supabase.com) and note:
 
 ### 2.2 Run Database Migration
 
-Go to **SQL Editor** and run the contents of `supabase-migration.sql`.
+Go to **SQL Editor** and run the contents of `supabase-migration.sql`, then
+`supabase-migration-002-fixes.sql`, then `supabase-migration-003-call-history.sql`,
+in that order. Each file is idempotent (safe to re-run).
 
 This creates:
 - `user_phone_numbers` table (with voice feature columns)
 - `call_recordings` table (for recordings & voicemails)
+- `call_history` table (permanent server-side call log)
 - RLS policies for security
+
+> **If you already ran `supabase-migration.sql` before today:** you must also run
+> `supabase-migration-002-fixes.sql` — it fixes a schema bug where every normal
+> call recording (not voicemail) silently failed to save because of a mismatched
+> CHECK constraint. Without it, call recording will look "enabled" in Settings but
+> nothing will ever show up in Recordings.
 
 ### 2.3 Create Users
 
@@ -87,7 +96,64 @@ In **Table Editor → user_phone_numbers**, insert rows:
 
 ---
 
-## Step 3: Configure Environment
+## Step 3: Google Sheets CRM Setup (Optional)
+
+Every completed call and voicemail gets transcribed and written as a row in a Google
+Sheet you control — one row per client phone number, updated on each new call. This
+requires a Google Cloud **service account**, not your personal Google login.
+
+### 3.1 Create the service account
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and create a
+   project (or pick an existing one).
+2. **APIs & Services → Library** → search "Google Sheets API" → **Enable**.
+3. **IAM & Admin → Service Accounts → Create Service Account**. Name it anything
+   (e.g. `netro-scale-sheets`). No project roles are needed — it only needs access to
+   the specific sheet you share with it in step 3.3.
+4. Open the new service account → **Keys → Add Key → Create new key → JSON**. This
+   downloads a `.json` file — treat it like a password, it grants write access to
+   anything shared with it.
+
+### 3.2 Set the credential
+
+Open the downloaded JSON file and copy its **entire contents** into the
+`GOOGLE_SERVICE_ACCOUNT_KEY` environment variable (see Step 4 below) — paste the
+whole JSON object as one value. This must be a server-side env var only. Never paste
+it into the app's Settings page or any other browser-facing field — unlike the AI
+provider API keys in Settings, this credential can access anything shared with it,
+not just spend a balance, so it does not belong in a database or browser-editable
+setting.
+
+### 3.3 Create and share the sheet
+
+1. Create a new Google Sheet (or use an existing one) — any name, any tab name. Leave
+   it empty; the app creates its own header row on the first write.
+2. Click **Share**, and share it with the service account's email address (the
+   `client_email` field in the JSON key file — looks like
+   `netro-scale-sheets@your-project.iam.gserviceaccount.com`) with **Editor** access.
+3. Copy the **Sheet ID** from the sheet's URL:
+   `https://docs.google.com/spreadsheets/d/`**`THIS_PART`**`/edit`.
+4. Paste that ID into **Settings → AI Voice Agent → Google Sheet ID** in the app (each
+   user/number can point at their own sheet).
+
+### 3.4 Call transcription
+
+Set at least one of these server-side env vars, or CRM sync will run but every row's
+"Last Query"/"Last Transcript" columns will stay blank:
+
+- `DEEPGRAM_API_KEY` — get one at [deepgram.com](https://deepgram.com) (real free-trial
+  credit). Can also be set per-user in Settings instead of/in addition to the env var.
+- `WHISPER_ENDPOINT_URL` — base URL of a self-hosted, OpenAI-API-compatible Whisper
+  server (e.g. `faster-whisper-server`, `LocalAI`), used as a fallback if Deepgram is
+  unset or a request to it fails. Fully free/open-source, but needs its own always-on
+  server — it cannot run inside this app's Vercel serverless functions.
+
+If both are unset, calls/voicemails still get recorded and logged to the sheet — just
+without a transcript or AI-generated summary.
+
+---
+
+## Step 4: Configure Environment
 
 Copy `.env.example` to `.env.local` and fill in your values:
 
@@ -103,11 +169,18 @@ TWILIO_API_KEY=SKxxxxxxxx
 TWILIO_API_SECRET=your-secret
 TWILIO_TWIML_APP_SID=APxxxxxxxx
 TWILIO_DEFAULT_NUMBER=+1XXXXXXXXXX
+
+# Google Sheets CRM (optional — see Step 3)
+GOOGLE_SERVICE_ACCOUNT_KEY={"type":"service_account","client_email":"...","private_key":"...", ...}
+
+# Call transcription (optional — see Step 3.4)
+DEEPGRAM_API_KEY=your-deepgram-key
+WHISPER_ENDPOINT_URL=https://your-whisper-server.example.com
 ```
 
 ---
 
-## Step 4: Run Locally
+## Step 5: Run Locally
 
 ### Terminal 1: Start ngrok
 
