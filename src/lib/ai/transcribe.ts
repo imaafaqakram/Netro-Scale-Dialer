@@ -60,7 +60,11 @@ async function transcribeWithDeepgram(audio: Buffer, apiKey: string): Promise<st
                 Authorization: `Token ${apiKey.trim()}`,
                 'Content-Type': 'audio/mpeg',
             },
-            body: audio,
+            // fetch's body type doesn't structurally accept Node's Buffer directly in
+            // this project's TS config (Buffer<ArrayBufferLike> vs BodyInit) even
+            // though Buffer is a Uint8Array subclass at runtime — wrapping it closes
+            // the type gap without copying semantics that matter here.
+            body: new Uint8Array(audio),
             signal: controller.signal,
         });
         clearTimeout(timeout);
@@ -85,7 +89,7 @@ async function transcribeWithWhisper(audio: Buffer, endpointUrl: string): Promis
         const timeout = setTimeout(() => controller.abort(), 120_000);
 
         const form = new FormData();
-        form.append('file', new Blob([audio], { type: 'audio/mpeg' }), 'recording.mp3');
+        form.append('file', new Blob([new Uint8Array(audio)], { type: 'audio/mpeg' }), 'recording.mp3');
         form.append('model', 'whisper-1');
 
         const base = endpointUrl.replace(/\/+$/, '');
