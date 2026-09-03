@@ -4,8 +4,8 @@
     justify-content: space-between;
     height: 68px;
     padding: 0 32px;
-    background: #ffffff;
-    border-bottom: 1px solid #f1f5f9;
+    background: var(--color-bg-secondary);
+    border-bottom: 1px solid var(--color-border-subtle);
     flex-shrink: 0;
     z-index: 20;
     gap: 12px;
@@ -18,18 +18,18 @@
     justify-content: center;
     width: 36px;
     height: 36px;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
     border-radius: 8px;
-    color: #475569;
+    color: var(--color-text-secondary);
     cursor: pointer;
     flex-shrink: 0;
     transition: all 0.15s;
 }
 
 .hamburgerBtn:hover {
-    background: #f1f5f9;
-    color: #0f172a;
+    background: var(--color-bg-hover);
+    color: var(--color-text-primary);
 }
 
 @media (max-width: 768px) {
@@ -52,14 +52,14 @@
 .title {
     font-size: 18px;
     font-weight: 700;
-    color: #0f172a;
+    color: var(--color-text-primary);
     letter-spacing: -0.3px;
     line-height: 1.2;
 }
 
 .subtitle {
     font-size: 12px;
-    color: #64748b;
+    color: var(--color-text-tertiary);
 }
 
 .right {
@@ -103,8 +103,8 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
     padding: 4px 6px 4px 12px;
     border-radius: 9999px;
 }
@@ -118,22 +118,22 @@
 .balanceLabel {
     font-size: 11px;
     font-weight: 600;
-    color: #64748b;
+    color: var(--color-text-tertiary);
     text-transform: uppercase;
 }
 
 .balanceAmount {
     font-size: 14px;
     font-weight: 700;
-    color: #059669;
+    color: var(--color-success-hover);
 }
 
 .topUpBtn {
     padding: 4px 10px;
     border-radius: 9999px;
     border: none;
-    background: #10b981;
-    color: #ffffff;
+    background: var(--color-success);
+    color: var(--color-text-inverse);
     font-size: 11px;
     font-weight: 700;
     cursor: pointer;
@@ -141,7 +141,7 @@
 }
 
 .topUpBtn:hover {
-    background: #059669;
+    background: var(--color-success-hover);
 }
 
 /* Status Pill */
@@ -163,52 +163,52 @@
 }
 
 .statusPill.ready {
-    background: #ecfdf5;
-    border-color: #a7f3d0;
-    color: #065f46;
+    background: var(--color-success-bg);
+    border-color: var(--color-success-border);
+    color: var(--color-success-dark);
 }
 
 .statusPill.ready:hover {
-    background: #d1fae5;
+    background: var(--color-success-glow);
 }
 
 .statusDot {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: #10b981;
+    background: var(--color-success);
     animation: pulse 2s infinite;
 }
 
 .statusPill.offline {
-    background: #f1f5f9;
-    border-color: #e2e8f0;
-    color: #64748b;
+    background: var(--color-bg-tertiary);
+    border-color: var(--color-border);
+    color: var(--color-text-tertiary);
 }
 
 .statusPill.offline .statusDot {
-    background: #94a3b8;
+    background: var(--color-text-muted);
     animation: none;
 }
 
 .statusPill.busy {
     background: #eff6ff;
     border-color: #bfdbfe;
-    color: #1d4ed8;
+    color: var(--color-info);
 }
 
 .statusPill.busy .statusDot {
-    background: #3b82f6;
+    background: var(--color-info);
 }
 
 .statusPill.error {
-    background: #fef2f2;
-    border-color: #fecaca;
-    color: #b91c1c;
+    background: var(--color-danger-glow);
+    border-color: var(--color-danger-glow);
+    color: var(--color-danger-dark);
 }
 
 .statusPill.error .statusDot {
-    background: #ef4444;
+    background: var(--color-danger);
 }
 
 @keyframes pulse {
@@ -222,8 +222,8 @@
     top: calc(100% + 8px);
     right: 0;
     width: 260px;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
     border-radius: 12px;
     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
     padding: 12px;
@@ -234,17 +234,17 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid var(--color-border-subtle);
     padding-bottom: 6px;
     font-size: 12px;
     font-weight: 600;
-    color: #0f172a;
+    color: var(--color-text-primary);
 }
 
 .tooltipHeader button {
     background: transparent;
     border: none;
-    color: #94a3b8;
+    color: var(--color-text-muted);
     cursor: pointer;
     font-size: 16px;
 }
@@ -252,11 +252,11 @@
 .tooltipBody {
     padding-top: 8px;
     font-size: 12px;
-    color: #475569;
+    color: var(--color-text-secondary);
 }
 
 .errorText {
-    color: #dc2626;
+    color: var(--color-danger-hover);
     margin-top: 4px;
 }
 
@@ -276,12 +276,12 @@
 }
 
 .modalContent {
-    background: #ffffff;
+    background: var(--color-bg-elevated);
     border-radius: 18px;
     width: 100%;
     max-width: 420px;
     padding: 24px;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-xl);
 }
 
 .modalHeader {
@@ -294,14 +294,14 @@
 .modalTitle {
     font-size: 17px;
     font-weight: 700;
-    color: #0f172a;
+    color: var(--color-text-primary);
 }
 
 .modalClose {
     background: transparent;
     border: none;
     font-size: 22px;
-    color: #94a3b8;
+    color: var(--color-text-muted);
     cursor: pointer;
 }
 
@@ -311,19 +311,19 @@
 
 .modalDesc {
     font-size: 13.5px;
-    color: #475569;
+    color: var(--color-text-secondary);
     margin-bottom: 14px;
 }
 
 .modalDesc strong {
-    color: #059669;
+    color: var(--color-success-hover);
 }
 
 .amountLabel {
     display: block;
     font-size: 12px;
     font-weight: 600;
-    color: #64748b;
+    color: var(--color-text-tertiary);
     margin-bottom: 8px;
 }
 
@@ -335,24 +335,24 @@
 
 .amountOption {
     padding: 10px 4px;
-    background: #f8fafc;
-    border: 1.5px solid #e2e8f0;
+    background: var(--color-bg-primary);
+    border: 1.5px solid var(--color-border);
     border-radius: 10px;
     font-size: 14px;
     font-weight: 700;
-    color: #0f172a;
+    color: var(--color-text-primary);
     cursor: pointer;
     transition: all 0.15s;
 }
 
 .amountOption:hover {
-    border-color: #cbd5e1;
+    border-color: var(--color-border-strong);
 }
 
 .amountSelected {
-    border-color: #10b981;
-    background: #ecfdf5;
-    color: #065f46;
+    border-color: var(--color-success);
+    background: var(--color-success-bg);
+    color: var(--color-success-dark);
 }
 
 .modalFooter {
@@ -363,27 +363,27 @@
 
 .cancelBtn {
     padding: 9px 16px;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
     border-radius: 10px;
     font-size: 13px;
     font-weight: 600;
-    color: #64748b;
+    color: var(--color-text-tertiary);
     cursor: pointer;
 }
 
 .confirmBtn {
     padding: 9px 18px;
-    background: #10b981;
+    background: var(--color-success);
     border: none;
     border-radius: 10px;
     font-size: 13px;
     font-weight: 700;
-    color: #ffffff;
+    color: var(--color-text-inverse);
     cursor: pointer;
     transition: background 0.15s;
 }
 
 .confirmBtn:hover {
-    background: #059669;
+    background: var(--color-success-hover);
 }

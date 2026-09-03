@@ -160,8 +160,8 @@
 }
 
 .inputField:focus, .inputFieldFull:focus, .textareaPrompt:focus {
-    border-color: #6366f1;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-primary-glow);
 }
 
 .inputHelp {
@@ -195,20 +195,20 @@
 .saveSuccessMsg {
     font-size: 13px;
     font-weight: 600;
-    color: #10b981;
+    color: var(--color-success);
 }
 
 .saveAIBtn {
     padding: 10px 20px;
-    background: linear-gradient(135deg, #4f46e5, #7c3aed);
-    color: #ffffff;
+    background: linear-gradient(135deg, var(--color-primary), #7c3aed);
+    color: var(--color-text-inverse);
     border: none;
     border-radius: 10px;
     font-size: 13px;
     font-weight: 700;
     cursor: pointer;
     transition: all 0.15s;
-    box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3);
+    box-shadow: 0 2px 6px var(--color-primary-glow);
 }
 
 .saveAIBtn:hover {

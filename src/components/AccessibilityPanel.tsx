@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useAccessibility } from '@/hooks/useAccessibility';
+import { useAccessibility } from '@/contexts/AccessibilityContext';
 import styles from './AccessibilityPanel.module.css';
 
 interface AccessibilityPanelProps {
