@@ -66,10 +66,16 @@ Create a project at [supabase.com](https://supabase.com) and note:
 Go to **SQL Editor** and run these files in order — each is idempotent (safe to
 re-run):
 
-1. `supabase-migration.sql`
-2. `supabase-migration-002-fixes.sql`
-3. `supabase-migration-003-call-history.sql`
-4. `supabase-migration-004-multi-tenant.sql`
+1. `supabase-migration-000-base-schema.sql` — **only on a brand-new project
+   that doesn't already have a `user_phone_numbers` table.** If you're on the
+   original project where it already exists, skip this one or it'll no-op
+   harmlessly (`CREATE TABLE IF NOT EXISTS`) — but on a fresh project, every
+   file below assumes this table already exists and will fail with
+   `relation "user_phone_numbers" does not exist` if you skip it.
+2. `supabase-migration.sql`
+3. `supabase-migration-002-fixes.sql`
+4. `supabase-migration-003-call-history.sql`
+5. `supabase-migration-004-multi-tenant.sql`
 
 This creates:
 - `user_phone_numbers` table (with voice feature columns)
