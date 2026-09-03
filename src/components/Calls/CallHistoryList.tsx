@@ -10,8 +10,19 @@ interface CallHistoryListProps {
     onFilterChange: (filter: CallHistoryFilter) => void;
     onCall: (phoneNumber: string) => void;
     onClear: () => void;
+    onDelete?: (id: string) => void;
     hideFilters?: boolean;
 }
+
+const STATUS_LABELS: Partial<Record<CallHistoryEntry['status'], string>> = {
+    missed: 'Missed',
+    'no-answer': 'No Answer',
+    busy: 'Busy',
+    failed: 'Failed',
+    canceled: 'Canceled',
+    voicemail: 'Voicemail',
+    'in-progress': 'In Progress',
+};
 
 const filterOptions: { value: CallHistoryFilter; label: string }[] = [
     { value: 'all', label: 'All' },
@@ -20,7 +31,7 @@ const filterOptions: { value: CallHistoryFilter; label: string }[] = [
     { value: 'missed', label: 'Missed' },
 ];
 
-export function CallHistoryList({ entries, filter, onFilterChange, onCall, onClear, hideFilters = false }: CallHistoryListProps) {
+export function CallHistoryList({ entries, filter, onFilterChange, onCall, onClear, onDelete, hideFilters = false }: CallHistoryListProps) {
     const formatDuration = (seconds: number): string => {
         if (seconds === 0) return 'No answer';
         const mins = Math.floor(seconds / 60);
@@ -133,9 +144,9 @@ export function CallHistoryList({ entries, filter, onFilterChange, onCall, onCle
                             </div>
 
                             <div className={styles.right}>
-                                {entry.status === 'missed' || entry.status === 'rejected' ? (
+                                {entry.status in STATUS_LABELS ? (
                                     <span className={`${styles.badge} ${styles.missed}`}>
-                                        {entry.status === 'missed' ? 'Missed' : 'Declined'}
+                                        {STATUS_LABELS[entry.status]}
                                     </span>
                                 ) : (
                                     <span className={styles.duration}>{formatDuration(entry.duration)}</span>
@@ -149,6 +160,17 @@ export function CallHistoryList({ entries, filter, onFilterChange, onCall, onCle
                                 >
                                     <CallIcon />
                                 </button>
+
+                                {onDelete && (
+                                    <button
+                                        className={styles.deleteBtn}
+                                        onClick={() => onDelete(entry.id)}
+                                        aria-label={`Delete call with ${entry.phoneNumber} from history`}
+                                        title="Delete from history"
+                                    >
+                                        <DeleteIcon />
+                                    </button>
+                                )}
                             </div>
                         </div>
                     ))}
@@ -189,6 +211,15 @@ function CallIcon() {
     return (
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
             <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z" />
+        </svg>
+    );
+}
+
+function DeleteIcon() {
+    return (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
         </svg>
     );
 }

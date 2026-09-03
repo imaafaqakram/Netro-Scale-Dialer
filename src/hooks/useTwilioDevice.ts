@@ -30,7 +30,9 @@ interface UseTwilioDeviceReturn {
     rejectIncomingCall: () => void;
 }
 
-export function useTwilioDevice(): UseTwilioDeviceReturn {
+export function useTwilioDevice(
+    onOutgoingCall?: (call: Call, explicitNumber: string) => void
+): UseTwilioDeviceReturn {
     const [device, setDevice] = useState<Device | null>(null);
     const [status, setStatus] = useState<DeviceStatus>('offline');
     const [error, setError] = useState<string | null>(null);
@@ -172,6 +174,15 @@ export function useTwilioDevice(): UseTwilioDeviceReturn {
                     customGreeting: options?.customGreeting || '',
                 },
             });
+
+            // Register the call with the call-state layer SYNCHRONOUSLY, in this same
+            // continuation, before anything else runs. The Call object is an EventEmitter —
+            // if the caller instead waits for this function to return and then registers
+            // listeners on a later tick (e.g. after another await/state-update round trip),
+            // any 'ringing'/'accept'/'disconnect' events that fire in that gap (very real on
+            // fast-answered or fast-rejected calls) are dropped for good and the UI never
+            // reflects the call. Doing it here closes that window.
+            onOutgoingCall?.(call, phoneNumber);
 
             call.on('disconnect', () => {
                 setStatus('ready');

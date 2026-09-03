@@ -227,15 +227,24 @@ async function handleOutgoingCall(to: string, from: string, params: Record<strin
         ? ` recordingStatusCallback="${appUrl}/api/twilio/recording-status?user_id=${encodeURIComponent(userId || 'user')}" recordingStatusCallbackEvent="completed"`
         : ''
 
+    // Per-leg call lifecycle callback -> permanent call_history row (see
+    // src/app/api/twilio/call-status/route.ts). Attached to <Number> itself (not
+    // <Dial>) so it reports this specific PSTN leg's CallSid/CallStatus/CallDuration —
+    // that leg is the source of truth for what actually happened on this call.
+    const statusCallbackUrlFor = (mode: 'direct' | 'script' | 'ai_agent') =>
+        `${appUrl}/api/twilio/call-status?user_id=${encodeURIComponent(userId || 'user')}&amp;direction=outgoing&amp;call_mode=${mode}`
+    const statusCallbackAttrFor = (mode: 'direct' | 'script' | 'ai_agent') =>
+        ` statusCallback="${statusCallbackUrlFor(mode)}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed"`
+
     console.log(`[Twilio Webhook] Outgoing call to ${cleanTo} with mode=${callMode}, callerId=${callerId}, recording=${recordingEnabled}`)
-    
+
     // Mode 1: AI Agent
     if (callMode === 'ai_agent') {
         const aiUrl = `${appUrl}/api/twilio/ai-call?agentUserId=${encodeURIComponent(userId || 'user')}&amp;callerId=${encodeURIComponent(callerId)}`
         return twimlResponse(`
             <Response>
                 <Dial answerOnBridge="true" callerId="${callerId}"${recordAttr}${recordCallbackAttr}>
-                    <Number url="${aiUrl}">${cleanTo}</Number>
+                    <Number url="${aiUrl}"${statusCallbackAttrFor('ai_agent')}>${cleanTo}</Number>
                 </Dial>
             </Response>
         `)
@@ -247,7 +256,7 @@ async function handleOutgoingCall(to: string, from: string, params: Record<strin
         return twimlResponse(`
             <Response>
                 <Dial answerOnBridge="true" callerId="${callerId}"${recordAttr}${recordCallbackAttr}>
-                    <Number url="${scriptUrl}">${cleanTo}</Number>
+                    <Number url="${scriptUrl}"${statusCallbackAttrFor('script')}>${cleanTo}</Number>
                 </Dial>
             </Response>
         `)
@@ -257,7 +266,7 @@ async function handleOutgoingCall(to: string, from: string, params: Record<strin
     return twimlResponse(`
         <Response>
             <Dial answerOnBridge="true" callerId="${callerId}"${recordAttr}${recordCallbackAttr}>
-                <Number>${cleanTo}</Number>
+                <Number${statusCallbackAttrFor('direct')}>${cleanTo}</Number>
             </Dial>
         </Response>
     `)
@@ -267,42 +276,64 @@ async function handleIncomingCall(to: string, from: string, request: NextRequest
     const supabase = createSupabaseAdmin()
     const dialedNumber = to || ''
 
-    let numberRecord = null
+    type NumberRecord = { user_id: string; call_recording_enabled?: boolean; voicemail_enabled?: boolean; voicemail_greeting_url?: string | null }
+    let numberRecord: NumberRecord | null = null
 
-    const exactResult = await supabase
-        .from('user_phone_numbers')
-        .select('user_id, call_recording_enabled, voicemail_enabled, voicemail_greeting_url')
-        .eq('phone_number', dialedNumber)
-        .limit(1)
-        .single()
+    // Wrapped in try/catch: a transient Supabase/network error here must NOT collapse
+    // into "no one is available" and hang up on a live inbound caller. It should degrade
+    // to the same best-effort fallback used when the number simply isn't mapped yet.
+    try {
+        const exactResult = await supabase
+            .from('user_phone_numbers')
+            .select('user_id, call_recording_enabled, voicemail_enabled, voicemail_greeting_url')
+            .eq('phone_number', dialedNumber)
+            .limit(1)
+            .single()
 
-    if (!exactResult.error && exactResult.data) {
-        numberRecord = exactResult.data
-    } else {
-        const normalizedNumber = formatE164(dialedNumber)
-        if (normalizedNumber && normalizedNumber !== dialedNumber) {
-            const normalizedResult = await supabase
-                .from('user_phone_numbers')
-                .select('user_id, call_recording_enabled, voicemail_enabled, voicemail_greeting_url')
-                .eq('phone_number', normalizedNumber)
-                .limit(1)
-                .single()
-            if (!normalizedResult.error && normalizedResult.data) {
-                numberRecord = normalizedResult.data
+        if (!exactResult.error && exactResult.data) {
+            numberRecord = exactResult.data
+        } else {
+            const normalizedNumber = formatE164(dialedNumber)
+            if (normalizedNumber && normalizedNumber !== dialedNumber) {
+                const normalizedResult = await supabase
+                    .from('user_phone_numbers')
+                    .select('user_id, call_recording_enabled, voicemail_enabled, voicemail_greeting_url')
+                    .eq('phone_number', normalizedNumber)
+                    .limit(1)
+                    .single()
+                if (!normalizedResult.error && normalizedResult.data) {
+                    numberRecord = normalizedResult.data
+                }
             }
         }
+    } catch (e) {
+        console.error(`[Twilio Webhook] Number lookup for ${dialedNumber} threw (transient DB/network error):`, e)
     }
 
     let userId: string | null = numberRecord?.user_id || null
+    let usedFallbackUser = false
+
     if (!userId) {
+        // No exact/normalized mapping for this specific number (or the lookup above
+        // errored) — best-effort: ring whichever user is configured rather than
+        // dead-ending a live call. NOTE: this is only correct for a single-tenant
+        // deployment where "any row" and "the right owner" are the same thing. Once
+        // numbers can belong to different tenants, this fallback must be scoped to the
+        // tenant that owns `dialedNumber` — ringing a global "first row" account would
+        // route one tenant's inbound calls to a different tenant's agent.
         try {
             const { data: anyNumber } = await supabase
                 .from('user_phone_numbers')
                 .select('user_id')
                 .limit(1)
                 .single()
-            if (anyNumber?.user_id) userId = anyNumber.user_id
-        } catch {}
+            if (anyNumber?.user_id) {
+                userId = anyNumber.user_id
+                usedFallbackUser = true
+            }
+        } catch (e) {
+            console.error('[Twilio Webhook] Fallback "any configured user" lookup also failed:', e)
+        }
     }
 
     const agentUserId = userId || 'user'
@@ -312,14 +343,20 @@ async function handleIncomingCall(to: string, from: string, request: NextRequest
     const inboundCallerId = formatE164(from) || from || to || process.env.TWILIO_DEFAULT_NUMBER || '+13072076444'
 
     if (!userId) {
-        // No user is mapped to this number and there is nobody to ring.
-        console.warn(`[Twilio Webhook] Incoming call to ${to} but no user is mapped to a phone number`)
+        // Nobody is configured in the system at all — not a transient hiccup, there is
+        // truly no one to ring and no voicemail box to record into (voicemail is keyed
+        // by user_id).
+        console.warn(`[Twilio Webhook] Incoming call to ${to} but no user is configured in user_phone_numbers at all`)
         return twimlResponse(`
             <Response>
                 <Say voice="Polly.Joanna">Thank you for calling. No one is available to take your call right now. Please try again later.</Say>
                 <Hangup/>
             </Response>
         `)
+    }
+
+    if (usedFallbackUser) {
+        console.warn(`[Twilio Webhook] Incoming call to ${to} has no matching number mapping — falling back to user ${userId}. Add ${to} to user_phone_numbers to fix this.`)
     }
 
     console.log(`[Twilio Webhook] Incoming call from ${from} → ringing softphone for user ${agentUserId}`)
@@ -337,10 +374,15 @@ async function handleIncomingCall(to: string, from: string, request: NextRequest
         ? ` action="${appUrl}/api/twilio/voicemail?user_id=${encodeURIComponent(agentUserId)}&amp;from=${encodeURIComponent(from || '')}"`
         : ''
 
+    // Per-leg call lifecycle callback -> permanent call_history row. From/To on this
+    // leg's callback are the callerId we set above (the real inbound caller) and the
+    // Client identity, so "From" is correctly the customer's number, not our own.
+    const statusCallbackAttr = ` statusCallback="${appUrl}/api/twilio/call-status?user_id=${encodeURIComponent(agentUserId)}&amp;direction=incoming&amp;call_mode=direct" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed"`
+
     return twimlResponse(`
         <Response>
             <Dial answerOnBridge="true" callerId="${inboundCallerId}"${recordAttr}${recordCallbackAttr}${actionAttr} timeout="25">
-                <Client>${escapeXml(agentUserId)}</Client>
+                <Client${statusCallbackAttr}>${escapeXml(agentUserId)}</Client>
             </Dial>
         </Response>
     `)

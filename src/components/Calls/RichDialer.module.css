@@ -4,8 +4,8 @@
     align-items: center;
     gap: 12px;
     padding: 6px 10px 6px 6px;
-    background: #f8fafc;
-    border: 1.5px solid #e2e8f0;
+    background: var(--color-bg-primary);
+    border: 1.5px solid var(--color-border);
     border-radius: 14px;
     max-width: 520px;
     width: 100%;
@@ -13,9 +13,9 @@
 }
 
 .dialerBar:focus-within {
-    border-color: #4f46e5;
-    background: #ffffff;
-    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+    border-color: var(--color-primary);
+    background: var(--color-bg-secondary);
+    box-shadow: 0 0 0 3px var(--color-primary-glow);
 }
 
 /* Icon Button */
@@ -27,23 +27,23 @@
     height: 40px;
     border: none;
     border-radius: 10px;
-    background: #ffffff;
-    color: #64748b;
-    border: 1px solid #e2e8f0;
+    background: var(--color-bg-secondary);
+    color: var(--color-text-tertiary);
+    border: 1px solid var(--color-border);
     cursor: pointer;
     transition: all 0.15s ease;
     flex-shrink: 0;
 }
 
 .iconBtn:hover {
-    background: #f1f5f9;
-    color: #0f172a;
+    background: var(--color-bg-hover);
+    color: var(--color-text-primary);
 }
 
 .iconBtn.active {
-    background: #e0e7fe;
-    color: #4338ca;
-    border-color: #c7d2fe;
+    background: var(--color-sidebar-active);
+    color: var(--color-primary-hover);
+    border-color: var(--color-primary-glow);
 }
 
 /* Input */
@@ -53,7 +53,7 @@
     padding: 8px 6px;
     font-size: 15.5px;
     font-weight: 600;
-    color: #0f172a;
+    color: var(--color-text-primary);
     background: transparent;
     border: none;
     outline: none;
@@ -61,7 +61,7 @@
 }
 
 .input::placeholder {
-    color: #94a3b8;
+    color: var(--color-text-muted);
     font-weight: 400;
 }
 
@@ -73,8 +73,8 @@
     padding: 10px 18px;
     font-size: 14px;
     font-weight: 600;
-    color: #ffffff;
-    background: #cbd5e1;
+    color: var(--color-text-inverse);
+    background: var(--color-border-strong);
     border: none;
     border-radius: 10px;
     cursor: not-allowed;
@@ -83,13 +83,13 @@
 }
 
 .callBtn.ready {
-    background: #10b981;
+    background: var(--color-success);
     cursor: pointer;
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+    box-shadow: 0 4px 12px var(--color-success-glow);
 }
 
 .callBtn.ready:hover {
-    background: #059669;
+    background: var(--color-success-hover);
     transform: translateY(-1px);
 }
 
@@ -104,10 +104,10 @@
     top: calc(100% + 10px);
     left: 0;
     width: 290px;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
     border-radius: 18px;
-    box-shadow: 0 20px 35px -5px rgba(0, 0, 0, 0.15), 0 10px 15px -5px rgba(0, 0, 0, 0.05);
+    box-shadow: var(--shadow-xl);
     z-index: 50;
     animation: popoverIn 0.15s ease-out;
     overflow: hidden;
@@ -129,14 +129,14 @@
     align-items: center;
     justify-content: space-between;
     padding: 12px 16px;
-    background: #f8fafc;
-    border-bottom: 1px solid #f1f5f9;
+    background: var(--color-bg-primary);
+    border-bottom: 1px solid var(--color-border-subtle);
 }
 
 .keypadTitle {
     font-size: 12px;
     font-weight: 700;
-    color: #475569;
+    color: var(--color-text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
@@ -148,7 +148,7 @@
     width: 24px;
     height: 24px;
     font-size: 20px;
-    color: #94a3b8;
+    color: var(--color-text-muted);
     background: transparent;
     border: none;
     border-radius: 4px;
@@ -158,7 +158,7 @@
 }
 
 .keypadClose:hover {
-    color: #0f172a;
+    color: var(--color-text-primary);
 }
 
 .keypadDisplay {
@@ -168,10 +168,10 @@
     padding: 12px 16px;
     font-size: 18px;
     font-weight: 700;
-    color: #0f172a;
+    color: var(--color-text-primary);
     letter-spacing: 0.5px;
-    border-bottom: 1px solid #f1f5f9;
-    background: #ffffff;
+    border-bottom: 1px solid var(--color-border-subtle);
+    background: var(--color-bg-secondary);
 }
 
 .backspace {
@@ -180,7 +180,7 @@
     justify-content: center;
     width: 32px;
     height: 32px;
-    color: #94a3b8;
+    color: var(--color-text-muted);
     background: transparent;
     border: none;
     border-radius: 8px;
@@ -189,8 +189,8 @@
 }
 
 .backspace:hover {
-    background: #fef2f2;
-    color: #ef4444;
+    background: var(--color-danger-glow);
+    color: var(--color-danger);
 }
 
 /* Keypad Grid */
@@ -207,34 +207,34 @@
     align-items: center;
     justify-content: center;
     height: 48px;
-    background: #f8fafc;
-    border: 1px solid #f1f5f9;
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border-subtle);
     border-radius: 12px;
     cursor: pointer;
     transition: all 0.15s ease;
 }
 
 .key:hover {
-    background: #e2e8f0;
+    background: var(--color-bg-active);
     transform: translateY(-1px);
 }
 
 .key:active {
-    background: #e0e7fe;
+    background: var(--color-sidebar-active);
     transform: scale(0.96);
 }
 
 .keyDigit {
     font-size: 17px;
     font-weight: 700;
-    color: #0f172a;
+    color: var(--color-text-primary);
     line-height: 1;
 }
 
 .keyLetters {
     font-size: 9px;
     font-weight: 600;
-    color: #94a3b8;
+    color: var(--color-text-muted);
     margin-top: 1px;
     letter-spacing: 0.5px;
 }
@@ -249,8 +249,8 @@
     padding: 12px;
     font-size: 14px;
     font-weight: 600;
-    color: #ffffff;
-    background: #cbd5e1;
+    color: var(--color-text-inverse);
+    background: var(--color-border-strong);
     border: none;
     border-radius: 12px;
     cursor: not-allowed;
@@ -258,11 +258,11 @@
 }
 
 .keypadCall.active {
-    background: #10b981;
+    background: var(--color-success);
     cursor: pointer;
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+    box-shadow: 0 4px 12px var(--color-success-glow);
 }
 
 .keypadCall.active:hover {
-    background: #059669;
+    background: var(--color-success-hover);
 }

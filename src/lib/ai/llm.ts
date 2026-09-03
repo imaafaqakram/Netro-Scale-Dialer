@@ -161,49 +161,57 @@ function generateRuleFallback(userMessage: string): string {
     return "Thanks for that. Let me connect you with someone on our team who can help. [TRANSFER]";
 }
 
-// Master LLM Dispatcher with Multi-Provider Fallbacks
-export async function generateAIResponse(
+export interface ProviderKeys {
+    cerebrasKey?: string;
+    replicateToken?: string;
+    deepseekKey?: string;
+    openaiKey?: string;
+}
+
+// Shared provider chain: Cerebras (fastest) -> Replicate -> DeepSeek -> OpenAI.
+// Returns null (never throws) if none are configured or all fail — callers decide
+// their own fallback behavior, since "no LLM available" means different things for
+// a live conversational turn (generateAIResponse, below) vs. a one-shot call summary
+// (summarizeCallTranscript, below): the former can hand off to a person, the latter
+// should degrade to a plain-text heuristic rather than surface a conversational reply.
+async function tryProviders(
     messages: ChatMessage[],
-    customKeys?: {
-        cerebrasKey?: string;
-        replicateToken?: string;
-        deepseekKey?: string;
-        openaiKey?: string;
-    }
-): Promise<LLMResponse> {
+    customKeys?: ProviderKeys
+): Promise<{ text: string; provider: LLMResponse['provider'] } | null> {
     const cerebrasKey = customKeys?.cerebrasKey || process.env.CEREBRAS_API_KEY || '';
     const replicateToken = customKeys?.replicateToken || process.env.REPLICATE_API_TOKEN || '';
     const deepseekKey = customKeys?.deepseekKey || process.env.DEEPSEEK_API_KEY || '';
     const openaiKey = customKeys?.openaiKey || process.env.OPENAI_API_KEY || '';
 
-    let outputText: string | null = null;
-    let provider: LLMResponse['provider'] = 'fallback_rule';
-
-    // 1. Try Cerebras first (fastest)
     if (cerebrasKey) {
-        outputText = await callCerebras(messages, cerebrasKey);
-        if (outputText) provider = 'cerebras';
+        const text = await callCerebras(messages, cerebrasKey);
+        if (text) return { text, provider: 'cerebras' };
     }
-
-    // 2. Fallback to Replicate
-    if (!outputText && replicateToken) {
-        outputText = await callReplicate(messages, replicateToken);
-        if (outputText) provider = 'replicate';
+    if (replicateToken) {
+        const text = await callReplicate(messages, replicateToken);
+        if (text) return { text, provider: 'replicate' };
     }
-
-    // 3. Fallback to DeepSeek
-    if (!outputText && deepseekKey) {
-        outputText = await callOpenAICompatible(messages, deepseekKey, 'https://api.deepseek.com/v1');
-        if (outputText) provider = 'deepseek';
+    if (deepseekKey) {
+        const text = await callOpenAICompatible(messages, deepseekKey, 'https://api.deepseek.com/v1');
+        if (text) return { text, provider: 'deepseek' };
     }
-
-    // 4. Fallback to OpenAI
-    if (!outputText && openaiKey) {
-        outputText = await callOpenAICompatible(messages, openaiKey, 'https://api.openai.com/v1');
-        if (outputText) provider = 'openai';
+    if (openaiKey) {
+        const text = await callOpenAICompatible(messages, openaiKey, 'https://api.openai.com/v1');
+        if (text) return { text, provider: 'openai' };
     }
+    return null;
+}
 
-    // 5. If all APIs unavailable, use Rule-Based Fallback
+// Master LLM Dispatcher with Multi-Provider Fallbacks
+export async function generateAIResponse(
+    messages: ChatMessage[],
+    customKeys?: ProviderKeys
+): Promise<LLMResponse> {
+    const result = await tryProviders(messages, customKeys);
+    let outputText = result?.text ?? null;
+    let provider: LLMResponse['provider'] = result?.provider ?? 'fallback_rule';
+
+    // If all APIs unavailable, use Rule-Based Fallback
     if (!outputText) {
         const lastUserMsg = messages.filter(m => m.role === 'user').pop()?.content || '';
         outputText = generateRuleFallback(lastUserMsg);
@@ -223,4 +231,34 @@ export async function generateAIResponse(
         shouldTransfer,
         provider,
     };
+}
+
+// One-shot summary of a call/voicemail transcript for the CRM sheet's "Last Query"
+// column — what did this person actually want? Reuses the same provider chain as
+// the live agent (no separate keys/config to manage) but falls back to a plain
+// truncation heuristic instead of a conversational reply when no LLM is configured,
+// since "let me connect you with someone" would be nonsense sitting in a CRM cell.
+export async function summarizeCallTranscript(
+    transcript: string,
+    customKeys?: ProviderKeys
+): Promise<string> {
+    const trimmed = (transcript || '').trim();
+    if (!trimmed) return '';
+
+    const result = await tryProviders(
+        [
+            {
+                role: 'system',
+                content: 'Summarize the caller\'s request from this call transcript in one short sentence (under 25 words). State only what they want or asked about — no greeting, no filler, no quotes.',
+            },
+            { role: 'user', content: trimmed.slice(0, 8000) },
+        ],
+        customKeys
+    );
+
+    if (result?.text) return result.text.trim();
+
+    // No LLM configured/available: fall back to a plain excerpt rather than nothing.
+    const flat = trimmed.replace(/\s+/g, ' ');
+    return flat.length > 180 ? `${flat.slice(0, 180)}…` : flat;
 }

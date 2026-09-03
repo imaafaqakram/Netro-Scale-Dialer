@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase';
 import { AppLayout } from '@/components/Layout';
 import { CallHistoryList, RichDialer } from '@/components/Calls';
@@ -8,7 +8,7 @@ import { AutoDialer } from '@/components/AutoDialer';
 import { AccessibilityPanel } from '@/components/AccessibilityPanel';
 import { AISimulatorModal } from '@/components/AISimulatorModal';
 import { useTwilio } from '@/contexts/TwilioContext';
-import { useCallHistory, createCallHistoryEntry } from '@/hooks/useCallHistory';
+import { useCallHistory } from '@/hooks/useCallHistory';
 import styles from './page.module.css';
 
 type CallFilter = 'all' | 'incoming' | 'outgoing' | 'missed';
@@ -38,7 +38,15 @@ function formatDuration(seconds?: number): string {
 
 export default function Home() {
     const twilio = useTwilio();
-    const { history, setFilter, addEntry, clearHistory } = useCallHistory();
+    const { history, setFilter, clearHistory, deleteEntry, refresh: refreshCallHistory } = useCallHistory();
+
+    // Call history is now written server-side, from Twilio's own status callbacks
+    // (see src/lib/callHistory.ts) — not by the client. This just nudges a refetch
+    // shortly after a call ends so the list updates faster than the hook's own
+    // background poll, giving the webhook round-trip time to land first.
+    const scheduleHistoryRefresh = useCallback(() => {
+        setTimeout(() => { refreshCallHistory(); }, 2500);
+    }, [refreshCallHistory]);
 
     const [callFilter, setCallFilter] = useState<CallFilter>('all');
     const [phoneNumber, setPhoneNumber] = useState('');
@@ -47,15 +55,10 @@ export default function Home() {
     const [user, setUser] = useState<{ email?: string | null } | null>(null);
     const [assignedNumbers, setAssignedNumbers] = useState<PhoneNumber[]>([]);
     const [selectedCallerId, setSelectedCallerId] = useState<string>('');
-    const [balance, setBalance] = useState<number>(25.00);
-    const [showTopUpModal, setShowTopUpModal] = useState(false);
-    const [topUpAmount, setTopUpAmount] = useState(10);
     const [voiceSettings, setVoiceSettings] = useState<{ call_recording_enabled: boolean; voicemail_enabled: boolean }>({
         call_recording_enabled: false,
         voicemail_enabled: false,
     });
-
-    const dialedNumberRef = useRef<string>('');
 
     // Fetch user and actual phone numbers & settings from backend
     useEffect(() => {
@@ -120,8 +123,6 @@ export default function Home() {
         const numberToCall = numberToCallParam || phoneNumber;
         if (!numberToCall.trim()) return;
 
-        dialedNumberRef.current = numberToCall;
-
         // If in AI Agent mode and calling a customer's phone number:
         if (callMode === 'ai_agent' && numberToCall !== '*99' && numberToCall !== '99') {
             try {
@@ -151,7 +152,6 @@ export default function Home() {
                         note: 'Ringing customer phone...',
                     });
                     setPhoneNumber('');
-                    addEntry(createCallHistoryEntry('outgoing', numberToCall, 0, 'completed'));
                 } else {
                     alert(`Error starting AI call: ${data.error || 'Failed to initiate call'}`);
                 }
@@ -164,11 +164,14 @@ export default function Home() {
         // Direct call, Script call, or *99 Test Call via Softphone
         const effectiveMode = (numberToCall === '*99' || numberToCall === '99') ? 'test' : callMode;
 
+        // twilio.makeCall() registers the call with the active-call state layer itself,
+        // synchronously, the instant it's created — do not call setActiveCall again here,
+        // that would double-attach listeners to the same Call object (duplicate/leaked
+        // duration timers, and a stale setCallStatus('connecting') stomping real progress).
         const call = await twilio.makeCall(numberToCall, selectedCallerId, {
             callMode: effectiveMode,
         });
         if (call) {
-            twilio.setActiveCall(call, 'outgoing', numberToCall);
             setPhoneNumber('');
         }
     };
@@ -225,13 +228,21 @@ export default function Home() {
                     turns: live.turns || prev.turns,
                     note,
                 } : null);
+
+                // Transitioned into a terminal status this tick — the AI-call status
+                // webhook (src/app/api/twilio/ai-call/status/route.ts) writes the
+                // durable call_history row around the same time; nudge a refetch.
+                const terminalStatuses = ['completed', 'voicemail', 'no-answer', 'busy', 'failed', 'canceled'];
+                if (!terminalStatuses.includes(activeAiCall.status) && terminalStatuses.includes(newStatus)) {
+                    scheduleHistoryRefresh();
+                }
             } catch (e) {
                 console.warn('[Single AI Call Poller] Error:', e);
             }
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [activeAiCall]);
+    }, [activeAiCall, scheduleHistoryRefresh]);
 
     const handleCancelSingleAiCall = async () => {
         if (!activeAiCall?.callSid) return;
@@ -245,20 +256,15 @@ export default function Home() {
         } catch {}
     };
 
-    // Handle incoming call disconnect -> add to history
+    // Incoming call disconnected/canceled before being answered: Twilio's own
+    // <Client> statusCallback (src/app/api/twilio/webhook/route.ts) will record this
+    // as a 'missed' call_history row once its no-answer/canceled callback lands —
+    // just nudge a refetch so the list catches up promptly.
     useEffect(() => {
         if (!twilio.incomingCall) return;
 
         const handleDisconnect = () => {
-            if (!twilio.activeCall) {
-                const params = twilio.incomingCall!.parameters as { From?: string };
-                addEntry(createCallHistoryEntry(
-                    'incoming',
-                    params.From || 'Unknown',
-                    0,
-                    'missed'
-                ));
-            }
+            if (!twilio.activeCall) scheduleHistoryRefresh();
         };
 
         twilio.incomingCall.on('disconnect', handleDisconnect);
@@ -268,21 +274,15 @@ export default function Home() {
             twilio.incomingCall?.off('disconnect', handleDisconnect);
             twilio.incomingCall?.off('cancel', handleDisconnect);
         };
-    }, [twilio.incomingCall, twilio.activeCall, addEntry]);
+    }, [twilio.incomingCall, twilio.activeCall, scheduleHistoryRefresh]);
 
-    // Handle remote disconnect -> add to history
+    // Active call ended: same deal — the per-leg statusCallback already recorded the
+    // authoritative outcome/duration server-side, this just nudges a refetch.
     useEffect(() => {
         if (!twilio.activeCall) return;
 
         const handleRemoteDisconnect = () => {
-            const numberForHistory = dialedNumberRef.current || twilio.remoteNumber || 'Unknown';
-            addEntry(createCallHistoryEntry(
-                twilio.direction || 'outgoing',
-                numberForHistory,
-                twilio.duration,
-                'completed'
-            ));
-            dialedNumberRef.current = '';
+            scheduleHistoryRefresh();
         };
 
         twilio.activeCall.on('disconnect', handleRemoteDisconnect);
@@ -290,12 +290,7 @@ export default function Home() {
         return () => {
             twilio.activeCall?.off('disconnect', handleRemoteDisconnect);
         };
-    }, [twilio.activeCall, twilio.direction, twilio.remoteNumber, twilio.duration, addEntry]);
-
-    const handleAddFunds = (amt: number) => {
-        setBalance(prev => prev + amt);
-        setShowTopUpModal(false);
-    };
+    }, [twilio.activeCall, scheduleHistoryRefresh]);
 
     return (
         <AppLayout
@@ -314,20 +309,6 @@ export default function Home() {
             <div className={styles.workspace}>
                 {/* Top Summary Bar */}
                 <div className={styles.statsBar}>
-                    {/* Balance Card Feature */}
-                    <div className={styles.statCard}>
-                        <div className={styles.statIconWallet}>
-                            <WalletIcon />
-                        </div>
-                        <div className={styles.statInfo}>
-                            <span className={styles.statLabel}>Available Balance</span>
-                            <span className={styles.statValue}>${balance.toFixed(2)}</span>
-                        </div>
-                        <button className={styles.statActionBtn} onClick={() => setShowTopUpModal(true)}>
-                            + Top Up
-                        </button>
-                    </div>
-
                     {/* Active Caller ID */}
                     <div className={styles.statCard}>
                         <div className={styles.statIconPhone}>
@@ -550,6 +531,7 @@ export default function Home() {
                                     onFilterChange={() => { }}
                                     onCall={(num) => handleCall(num)}
                                     onClear={clearHistory}
+                                    onDelete={deleteEntry}
                                     hideFilters={true}
                                 />
                             </div>
@@ -557,37 +539,6 @@ export default function Home() {
                     </div>
                 </div>
             </div>
-
-            {/* Top Up Modal */}
-            {showTopUpModal && (
-                <div className={styles.modalBackdrop} onClick={() => setShowTopUpModal(false)}>
-                    <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-                        <div className={styles.modalHeader}>
-                            <h3 className={styles.modalTitle}>Add Calling Balance</h3>
-                            <button className={styles.modalClose} onClick={() => setShowTopUpModal(false)}>×</button>
-                        </div>
-                        <div className={styles.modalBody}>
-                            <p className={styles.modalDesc}>Current balance: <strong>${balance.toFixed(2)}</strong></p>
-                            <label className={styles.amountLabel}>Choose top-up amount:</label>
-                            <div className={styles.amountGrid}>
-                                {[10, 25, 50, 100].map(amt => (
-                                    <button
-                                        key={amt}
-                                        className={`${styles.amountOption} ${topUpAmount === amt ? styles.amountSelected : ''}`}
-                                        onClick={() => setTopUpAmount(amt)}
-                                    >
-                                        ${amt}.00
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                        <div className={styles.modalFooter}>
-                            <button className={styles.cancelBtn} onClick={() => setShowTopUpModal(false)}>Cancel</button>
-                            <button className={styles.confirmBtn} onClick={() => handleAddFunds(topUpAmount)}>Add ${topUpAmount}.00</button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* AI Simulator Modal */}
             <AISimulatorModal
@@ -600,16 +551,6 @@ export default function Home() {
 }
 
 // Icons
-function WalletIcon() {
-    return (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="2" y="5" width="20" height="14" rx="2" />
-            <line x1="2" y1="10" x2="22" y2="10" />
-            <circle cx="16" cy="15" r="1" fill="currentColor" />
-        </svg>
-    );
-}
-
 function LineIcon() {
     return (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

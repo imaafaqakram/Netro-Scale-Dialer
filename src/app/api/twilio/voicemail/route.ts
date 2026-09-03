@@ -1,6 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { getPublicAppUrl } from '@/lib/url'
+import { syncCallToCrm } from '@/lib/crm/callSync'
+
+// Transcription (Deepgram/Whisper) can take a while; give this route more headroom
+// than the Next.js/Vercel default.
+export const maxDuration = 60
 
 function twimlResponse(twiml: string): NextResponse {
     return new NextResponse(twiml, {
@@ -167,10 +172,19 @@ async function saveVoicemail(params: SaveVoicemailParams): Promise<NextResponse>
         .limit(1)
         .single()
 
+    // Resolve org so org_admins get oversight visibility (see
+    // supabase-migration-004-multi-tenant.sql).
+    const { data: membership } = await supabase
+        .from('organization_members')
+        .select('org_id')
+        .eq('user_id', targetUserId)
+        .maybeSingle()
+
     const { error } = await supabase
         .from('call_recordings')
         .insert({
             user_id: targetUserId,
+            org_id: membership?.org_id || null,
             phone_number: numberData?.phone_number || '',
             caller_number: params.callerNumber || 'Unknown Caller',
             recording_url: params.recordingUrl,
@@ -186,6 +200,20 @@ async function saveVoicemail(params: SaveVoicemailParams): Promise<NextResponse>
     } else {
         console.log(`[Voicemail] Saved voicemail from ${params.callerNumber} for user ${targetUserId}`)
     }
+
+    // Transcription can take a few seconds — the caller is live on the line waiting to
+    // hear the goodbye message, so this must not block the TwiML response (unlike
+    // recording-status, which is a pure background callback with nobody waiting).
+    // next/server's after() runs this once the response has been sent, while keeping
+    // the serverless function alive until it finishes — plain fire-and-forget after
+    // `return` is not reliably given that guarantee on Vercel.
+    after(() => syncCallToCrm({
+        userId: targetUserId,
+        phoneNumber: params.callerNumber || 'Unknown Caller',
+        type: 'voicemail',
+        direction: 'incoming',
+        recordingUrl: params.recordingUrl,
+    }))
 
     return twimlResponse(`
         <Response>

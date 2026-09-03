@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import { syncCallToCrm } from '@/lib/crm/callSync'
+
+// Transcription (Deepgram/Whisper) can take a while on longer calls; give this route
+// more headroom than the Next.js/Vercel default before Twilio's own retry kicks in.
+export const maxDuration = 60
 
 // Twilio calls this when a call recording is completed.
 // We save the recording metadata to Supabase.
@@ -108,10 +113,19 @@ export async function POST(request: NextRequest) {
 
         const callerNumber = from || to || numberData?.phone_number || ''
 
+        // Resolve org so org_admins get oversight visibility (see
+        // supabase-migration-004-multi-tenant.sql).
+        const { data: membership } = await supabase
+            .from('organization_members')
+            .select('org_id')
+            .eq('user_id', targetUserId)
+            .maybeSingle()
+
         const { error } = await supabase
             .from('call_recordings')
             .insert({
                 user_id: targetUserId,
+                org_id: membership?.org_id || null,
                 phone_number: numberData?.phone_number || to || '',
                 caller_number: callerNumber,
                 recording_url: recordingUrl,
@@ -127,6 +141,22 @@ export async function POST(request: NextRequest) {
         } else {
             console.log(`[Recording Status] Successfully saved call recording ${recordingSid} for user ${targetUserId}`)
         }
+
+        // Best-effort: transcribe + sync to the user's CRM sheet, if they've configured
+        // one (see src/lib/crm/callSync.ts — no-ops cleanly if not). Awaited rather than
+        // fire-and-forget: this is a serverless function, and a "background" task started
+        // after the response is sent is not guaranteed to finish once the response goes
+        // out. Recording-status is already an async, post-call callback, so the extra
+        // latency here doesn't affect call quality.
+        const businessNumber = numberData?.phone_number || ''
+        const isOutgoing = !!businessNumber && from === businessNumber
+        await syncCallToCrm({
+            userId: targetUserId,
+            phoneNumber: (isOutgoing ? to : from) || callerNumber,
+            type: 'call',
+            direction: isOutgoing ? 'outgoing' : 'incoming',
+            recordingUrl,
+        })
 
         return NextResponse.json({ ok: true })
     } catch (error) {

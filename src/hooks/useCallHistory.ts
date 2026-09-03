@@ -1,78 +1,98 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
-import type { CallHistoryEntry, CallHistoryFilter, CallDirection } from '@/types';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import type { CallHistoryEntry, CallHistoryFilter } from '@/types';
 
-const STORAGE_KEY = 'twilio-phone-call-history';
-const MAX_HISTORY_ENTRIES = 100;
+// Server-backed call history. Every entry is written by Twilio's own call status
+// callbacks (src/app/api/twilio/call-status/route.ts,
+// src/app/api/twilio/ai-call/status/route.ts) via /api/user/call-history — this
+// hook only reads and deletes. Nothing here caps or expires entries; a row exists
+// until the user explicitly deletes it.
+const POLL_INTERVAL_MS = 10000;
 
 interface UseCallHistoryReturn {
     history: CallHistoryEntry[];
     filteredHistory: CallHistoryEntry[];
     filter: CallHistoryFilter;
     setFilter: (filter: CallHistoryFilter) => void;
-    addEntry: (entry: Omit<CallHistoryEntry, 'id'>) => void;
-    clearHistory: () => void;
+    loading: boolean;
+    refresh: () => Promise<void>;
+    deleteEntry: (id: string) => Promise<void>;
+    clearHistory: () => Promise<void>;
     getEntryById: (id: string) => CallHistoryEntry | undefined;
+}
+
+interface ApiEntry {
+    id: string;
+    callSid?: string;
+    direction: CallHistoryEntry['direction'];
+    phoneNumber: string;
+    leadName?: string | null;
+    callMode?: CallHistoryEntry['callMode'];
+    status: CallHistoryEntry['status'];
+    duration: number;
+    timestamp: string;
 }
 
 export function useCallHistory(): UseCallHistoryReturn {
     const [history, setHistory] = useState<CallHistoryEntry[]>([]);
     const [filter, setFilter] = useState<CallHistoryFilter>('all');
+    const [loading, setLoading] = useState(true);
+    const isMounted = useRef(true);
 
-    // Load history from localStorage on mount
-    useEffect(() => {
+    const refresh = useCallback(async () => {
         try {
-            const stored = localStorage.getItem(STORAGE_KEY);
-            if (stored) {
-                const parsed = JSON.parse(stored);
-                // Convert timestamp strings back to Date objects
-                const entries = parsed.map((entry: CallHistoryEntry) => ({
+            const res = await fetch('/api/user/call-history');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (!isMounted.current || !Array.isArray(data.entries)) return;
+            setHistory(
+                data.entries.map((entry: ApiEntry) => ({
                     ...entry,
                     timestamp: new Date(entry.timestamp),
-                }));
-                setHistory(entries);
-            }
+                }))
+            );
         } catch (err) {
             console.error('Failed to load call history:', err);
+        } finally {
+            if (isMounted.current) setLoading(false);
         }
     }, []);
 
-    // Save history to localStorage when it changes
     useEffect(() => {
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
-        } catch (err) {
-            console.error('Failed to save call history:', err);
-        }
-    }, [history]);
-
-    // Add new entry
-    const addEntry = useCallback((entry: Omit<CallHistoryEntry, 'id'>) => {
-        const newEntry: CallHistoryEntry = {
-            ...entry,
-            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        isMounted.current = true;
+        refresh();
+        const interval = setInterval(refresh, POLL_INTERVAL_MS);
+        return () => {
+            isMounted.current = false;
+            clearInterval(interval);
         };
+    }, [refresh]);
 
-        setHistory((prev) => {
-            const updated = [newEntry, ...prev];
-            // Limit to max entries
-            return updated.slice(0, MAX_HISTORY_ENTRIES);
-        });
-    }, []);
+    const deleteEntry = useCallback(async (id: string) => {
+        setHistory((prev) => prev.filter((e) => e.id !== id));
+        try {
+            await fetch(`/api/user/call-history?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+        } catch (err) {
+            console.error('Failed to delete call history entry:', err);
+            refresh();
+        }
+    }, [refresh]);
 
-    // Clear all history
-    const clearHistory = useCallback(() => {
+    const clearHistory = useCallback(async () => {
         setHistory([]);
-        localStorage.removeItem(STORAGE_KEY);
-    }, []);
+        try {
+            await fetch('/api/user/call-history?all=true', { method: 'DELETE' });
+        } catch (err) {
+            console.error('Failed to clear call history:', err);
+            refresh();
+        }
+    }, [refresh]);
 
-    // Get entry by ID
     const getEntryById = useCallback((id: string) => {
         return history.find((entry) => entry.id === id);
     }, [history]);
 
-    // Filter history based on current filter
     const filteredHistory = history.filter((entry) => {
         switch (filter) {
             case 'incoming':
@@ -91,24 +111,10 @@ export function useCallHistory(): UseCallHistoryReturn {
         filteredHistory,
         filter,
         setFilter,
-        addEntry,
+        loading,
+        refresh,
+        deleteEntry,
         clearHistory,
         getEntryById,
-    };
-}
-
-// Helper function to create a call history entry
-export function createCallHistoryEntry(
-    direction: CallDirection,
-    phoneNumber: string,
-    duration: number,
-    status: 'completed' | 'missed' | 'rejected'
-): Omit<CallHistoryEntry, 'id'> {
-    return {
-        direction,
-        phoneNumber,
-        timestamp: new Date(),
-        duration,
-        status,
     };
 }

@@ -39,7 +39,11 @@
   --color-danger-glow: rgba(239, 68, 68, 0.2);
 
   --color-warning: #f59e0b;
+  --color-warning-bg: #fffbeb;
+  --color-warning-border: #fde68a;
   --color-info: #3b82f6;
+  --color-info-bg: #eff6ff;
+  --color-info-border: #bfdbfe;
 
   /* Text */
   --color-text-primary: #0f172a;
@@ -110,6 +114,119 @@
   --z-modal: 400;
   --z-popover: 500;
   --z-tooltip: 600;
+
+  /* Main content background (light) */
+  --gradient-main-content: radial-gradient(circle at 10% 0%, #fdf2f8 0%, #fff1f2 10%, #f8fafc 35%, #ffffff 100%);
+  --color-scrollbar-thumb: #cbd5e1;
+  --color-scrollbar-thumb-hover: #94a3b8;
+
+  color-scheme: light;
+}
+
+/* ============================================
+   Dark Theme
+   Applied via [data-theme="dark"], set on <html> by AccessibilityContext
+   (src/contexts/AccessibilityContext.tsx). Every token below overrides its
+   light-mode definition above 1:1 — nothing outside :root should hardcode
+   a color that isn't one of these variables, or it will silently stay
+   light-mode-only in the dark theme.
+   ============================================ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-bg-primary: #0b1120;
+  --color-bg-secondary: #111827;
+  --color-bg-tertiary: #1e293b;
+  --color-bg-elevated: #1a2436;
+  --color-bg-hover: #1e293b;
+  --color-bg-active: #334155;
+
+  --color-sidebar: #0f172a;
+  --color-sidebar-hover: #1e293b;
+  --color-sidebar-active: #312e81;
+  --color-sidebar-text: #f1f5f9;
+  --color-sidebar-text-secondary: #cbd5e1;
+  --color-sidebar-text-muted: #64748b;
+
+  --color-primary: #6366f1;
+  --color-primary-hover: #818cf8;
+  --color-primary-dark: #4338ca;
+  --color-primary-glow: rgba(99, 102, 241, 0.25);
+
+  --color-brand-red: #fb7185;
+  --color-brand-red-hover: #f43f5e;
+  --color-brand-pink: #f472b6;
+  --color-brand-pink-bg: rgba(236, 72, 153, 0.12);
+
+  --color-success: #34d399;
+  --color-success-hover: #6ee7b7;
+  --color-success-dark: #10b981;
+  --color-success-bg: rgba(16, 185, 129, 0.12);
+  --color-success-border: rgba(16, 185, 129, 0.35);
+  --color-success-glow: rgba(16, 185, 129, 0.25);
+
+  --color-danger: #f87171;
+  --color-danger-hover: #fca5a5;
+  --color-danger-dark: #dc2626;
+  --color-danger-glow: rgba(239, 68, 68, 0.25);
+
+  --color-warning: #fbbf24;
+  --color-warning-bg: rgba(245, 158, 11, 0.12);
+  --color-warning-border: rgba(245, 158, 11, 0.35);
+  --color-info: #60a5fa;
+  --color-info-bg: rgba(96, 165, 250, 0.12);
+  --color-info-border: rgba(96, 165, 250, 0.35);
+
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #cbd5e1;
+  --color-text-tertiary: #94a3b8;
+  --color-text-muted: #64748b;
+  --color-text-inverse: #0f172a;
+
+  --color-border: #334155;
+  --color-border-subtle: #1e293b;
+  --color-border-strong: #475569;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.24);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.24);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.32), 0 2px 4px -1px rgba(0, 0, 0, 0.24);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.36), 0 4px 6px -2px rgba(0, 0, 0, 0.24);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 10px 10px -5px rgba(0, 0, 0, 0.24);
+
+  --gradient-main-content: radial-gradient(circle at 10% 0%, #1a1030 0%, #150f24 10%, #0b1120 35%, #0b1120 100%);
+  --color-scrollbar-thumb: #334155;
+  --color-scrollbar-thumb-hover: #475569;
+}
+
+/* Font size scale — applied via [data-font-size] set by AccessibilityContext */
+:root[data-font-size="small"] { font-size: 14px; }
+:root[data-font-size="normal"] { font-size: 16px; }
+:root[data-font-size="large"] { font-size: 18px; }
+:root[data-font-size="extra-large"] { font-size: 20px; }
+
+/* High contrast — applied via [data-high-contrast="true"] */
+:root[data-high-contrast="true"] {
+  --color-border: var(--color-border-strong);
+  --color-text-secondary: var(--color-text-primary);
+  --color-text-tertiary: var(--color-text-primary);
+}
+:root[data-high-contrast="true"]:not([data-theme="dark"]) {
+  --color-text-primary: #000000;
+  --color-bg-primary: #ffffff;
+  --color-border-strong: #000000;
+}
+:root[data-high-contrast="true"][data-theme="dark"] {
+  --color-text-primary: #ffffff;
+  --color-bg-primary: #000000;
+  --color-border-strong: #ffffff;
+}
+
+/* Reduced motion — applied via [data-reduced-motion="true"] */
+:root[data-reduced-motion="true"] * {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
 }
 
 /* Global Reset & Base Styles */
@@ -167,7 +284,7 @@ body {
   flex-direction: column;
   height: 100vh;
   overflow-y: auto;
-  background: radial-gradient(circle at 10% 0%, #fdf2f8 0%, #fff1f2 10%, #f8fafc 35%, #ffffff 100%);
+  background: var(--gradient-main-content);
   position: relative;
   min-width: 0;
 }
@@ -207,12 +324,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--color-scrollbar-thumb);
   border-radius: var(--radius-full);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--color-scrollbar-thumb-hover);
 }
 
 /* Focus styles */

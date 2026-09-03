@@ -19,6 +19,7 @@ interface DialEntry {
     id: string;
     number: string;
     name?: string;
+    email?: string;
     status: DialStatus;
     callSid?: string;
     duration?: number;
@@ -118,6 +119,7 @@ export function AutoDialer() {
 
             let phoneColIdx = -1;
             let nameColIdx = -1;
+            let emailColIdx = -1;
 
             if (rows.length > 0) {
                 const headerRow = rows[0].map(c => String(c).toLowerCase().trim());
@@ -127,9 +129,11 @@ export function AutoDialer() {
                 nameColIdx = headerRow.findIndex(h =>
                     h.includes('name') || h.includes('first') || h.includes('lead') || h.includes('customer') || h.includes('client')
                 );
+                emailColIdx = headerRow.findIndex(h => h.includes('email') || h.includes('e-mail'));
             }
 
             const startRow = (phoneColIdx !== -1) ? 1 : 0;
+            const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
             for (let r = startRow; r < rows.length; r++) {
                 const row = rows[r];
@@ -137,22 +141,29 @@ export function AutoDialer() {
 
                 let foundNumber = '';
                 let foundName = '';
+                let foundEmail = '';
 
                 if (phoneColIdx !== -1 && row[phoneColIdx] !== undefined) {
                     foundNumber = cleanPhoneNumber(String(row[phoneColIdx]));
                     if (nameColIdx !== -1 && row[nameColIdx] !== undefined) {
                         foundName = String(row[nameColIdx]).trim();
                     }
+                    if (emailColIdx !== -1 && row[emailColIdx] !== undefined) {
+                        const cell = String(row[emailColIdx]).trim();
+                        if (emailPattern.test(cell)) foundEmail = cell;
+                    }
                 } else {
                     for (let c = 0; c < row.length; c++) {
                         const cleaned = cleanPhoneNumber(String(row[c] || '').trim());
                         if (cleaned) {
                             foundNumber = cleaned;
-                            const otherCell = row.find((val, idx) => idx !== c && String(val).trim().length > 1 && !/\d{5,}/.test(String(val)));
+                            const otherCell = row.find((val, idx) => idx !== c && String(val).trim().length > 1 && !/\d{5,}/.test(String(val)) && !emailPattern.test(String(val).trim()));
                             if (otherCell) foundName = String(otherCell).trim();
                             break;
                         }
                     }
+                    const emailCell = row.find((val) => emailPattern.test(String(val).trim()));
+                    if (emailCell) foundEmail = String(emailCell).trim();
                 }
 
                 if (foundNumber && !seenNumbers.has(foundNumber)) {
@@ -161,6 +172,7 @@ export function AutoDialer() {
                         id: `lead-${parsedLeads.length + 1}-${Date.now()}`,
                         number: foundNumber,
                         name: foundName,
+                        email: foundEmail,
                         status: 'pending',
                     });
                 }
@@ -203,6 +215,7 @@ export function AutoDialer() {
                         to: entry.number,
                         agentUserId,
                         leadName: entry.name || '',
+                        leadEmail: entry.email || '',
                         leadId: entry.id,
                     }),
                 });
@@ -235,10 +248,11 @@ export function AutoDialer() {
         } else {
             // Direct softphone mode
             directActiveEntryIdRef.current = entryId;
+            // twilioRef.current.makeCall() already registers the call with the active-call
+            // state layer synchronously as soon as it's created — do not call setActiveCall
+            // again here, that would double-attach listeners to the same Call object.
             const call = await twilioRef.current.makeCall(entry.number);
-            if (call) {
-                twilioRef.current.setActiveCall(call, 'outgoing', entry.number);
-            } else {
+            if (!call) {
                 activeCallsRef.current.delete(entryId);
                 directActiveEntryIdRef.current = null;
                 setEntries(prev => prev.map(e =>

@@ -16,6 +16,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     const pathname = usePathname();
     const [unreadVoicemails, setUnreadVoicemails] = useState(0);
     const [defaultNumber, setDefaultNumber] = useState<string>('');
+    const [canSeeAdmin, setCanSeeAdmin] = useState(false);
+    const [canSeeSuperAdmin, setCanSeeSuperAdmin] = useState(false);
 
     // Fetch real unread voicemails and default caller ID
     useEffect(() => {
@@ -37,6 +39,16 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                         setDefaultNumber(def.phone_number || '');
                     }
                 }
+
+                // Fetch role, to decide whether to show Admin / Super Admin links.
+                // The links are just visibility — every /admin and /superadmin
+                // route re-checks authorization itself server-side regardless.
+                const roleRes = await fetch('/api/user/role');
+                if (roleRes.ok) {
+                    const data = await roleRes.json();
+                    setCanSeeAdmin(!!data.isSuperAdmin || data.orgRole === 'org_admin');
+                    setCanSeeSuperAdmin(!!data.isSuperAdmin);
+                }
             } catch { }
         };
 
@@ -48,6 +60,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     const isDialerPage = pathname === '/' || pathname === '/calls' || pathname.startsWith('/calls/');
     const isRecordingsPage = pathname === '/recordings' || pathname.startsWith('/recordings/');
     const isSettingsPage = pathname === '/settings' || pathname.startsWith('/settings/');
+    const isAdminPage = pathname === '/admin' || pathname.startsWith('/admin/');
+    const isSuperAdminPage = pathname === '/superadmin' || pathname.startsWith('/superadmin/');
 
     return (
         <aside className={`${styles.sidebar} ${isOpen ? styles.open : ''}`}>
@@ -92,6 +106,26 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                         <SettingsIcon />
                         <span className={styles.navLabel}>Settings & Numbers</span>
                     </Link>
+
+                    {canSeeAdmin && (
+                        <Link
+                            href="/admin"
+                            className={`${styles.navItem} ${isAdminPage ? styles.active : ''}`}
+                        >
+                            <AdminIcon />
+                            <span className={styles.navLabel}>Admin</span>
+                        </Link>
+                    )}
+
+                    {canSeeSuperAdmin && (
+                        <Link
+                            href="/superadmin"
+                            className={`${styles.navItem} ${isSuperAdminPage ? styles.active : ''}`}
+                        >
+                            <SuperAdminIcon />
+                            <span className={styles.navLabel}>Super Admin</span>
+                        </Link>
+                    )}
                 </div>
             </nav>
 
@@ -140,6 +174,26 @@ function RecordingIcon() {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="10" />
             <circle cx="12" cy="12" r="4" fill="currentColor" stroke="none" />
+        </svg>
+    );
+}
+
+function AdminIcon() {
+    return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+    );
+}
+
+function SuperAdminIcon() {
+    return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z" />
+            <path d="M9 12l2 2 4-4" />
         </svg>
     );
 }

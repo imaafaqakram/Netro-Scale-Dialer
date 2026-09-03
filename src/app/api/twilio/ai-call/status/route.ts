@@ -1,6 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import twilio from 'twilio';
 import { updateCall, getCall, getAllActiveCalls, LiveAICall } from '@/lib/ai/callStore';
+import { createSupabaseAdmin } from '@/lib/supabase/admin';
+import { upsertCallHistory, CallHistoryStatus } from '@/lib/callHistory';
+import { syncCallToCrm } from '@/lib/crm/callSync';
+
+export const maxDuration = 60;
+
+const TERMINAL_STATUSES: Record<string, CallHistoryStatus> = {
+    completed: 'completed',
+    busy: 'busy',
+    'no-answer': 'no-answer',
+    failed: 'failed',
+    canceled: 'canceled',
+    cancelled: 'canceled',
+};
 
 // Extract params from either POST form data or GET query params
 async function extractParams(request: NextRequest): Promise<Record<string, string>> {
@@ -118,7 +132,51 @@ export async function POST(request: NextRequest) {
             updates.agentUserId = agentUserId;
         }
 
-        updateCall(callSid, updates);
+        const merged = updateCall(callSid, updates);
+
+        // Mirror terminal states into the permanent call_history table — the in-memory
+        // callStore above is telemetry for the live-call UI only (it's wiped on every
+        // server restart / cold start and after 2 hours), not durable storage.
+        // Check merged.status === 'voicemail' FIRST: AMD can mark a call 'voicemail'
+        // on an earlier request than the 'completed' status callback that follows it,
+        // and that later 'completed' callback must not stomp the more informative
+        // voicemail outcome back to a plain 'completed'.
+        const historyStatus: CallHistoryStatus | null =
+            merged?.status === 'voicemail' ? 'voicemail' : (TERMINAL_STATUSES[callStatus] || null);
+        if (historyStatus && merged?.agentUserId) {
+            try {
+                const supabase = createSupabaseAdmin();
+                await upsertCallHistory(supabase, {
+                    callSid,
+                    userId: merged.agentUserId,
+                    direction: 'outgoing',
+                    phoneNumber: merged.to || '',
+                    leadName: merged.leadName || null,
+                    callMode: 'ai_agent',
+                    status: historyStatus,
+                    duration: merged.duration || callDuration || 0,
+                });
+            } catch (e) {
+                console.error('[AI Call Status] Failed to write call_history:', e);
+            }
+
+            // AI-agent calls already have a text transcript from the turn-by-turn
+            // conversation — no audio recording to transcribe (this call path doesn't
+            // set Twilio's `record` option), so pass it straight through.
+            const transcript = (merged.turns || [])
+                .map((t) => `${t.role === 'user' ? 'Customer' : 'AI Agent'}: ${t.text}`)
+                .join('\n');
+            await syncCallToCrm({
+                userId: merged.agentUserId,
+                phoneNumber: merged.to || '',
+                type: historyStatus === 'voicemail' ? 'voicemail' : 'call',
+                direction: 'outgoing',
+                leadName: merged.leadName || null,
+                leadEmail: merged.leadEmail || null,
+                transcript,
+            });
+        }
+
         return NextResponse.json({ success: true, callSid });
     } catch (err: any) {
         console.error('[AI Call Status Callback Error]', err);

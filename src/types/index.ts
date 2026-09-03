@@ -11,14 +11,32 @@ export interface CallInfo {
     status: CallStatus;
 }
 
-// Call history types
+// Call history types — mirrors call_history rows (see
+// supabase-migration-003-call-history.sql), written server-side from Twilio's own
+// call status callbacks. 'missed' covers no-answer/busy/failed/canceled on an
+// incoming call; those same outcomes on an outgoing call keep their specific
+// status so "I called and it rang out" reads differently from "I called and the
+// line was busy."
+export type CallOutcomeStatus =
+    | 'in-progress'
+    | 'completed'
+    | 'missed'
+    | 'no-answer'
+    | 'busy'
+    | 'failed'
+    | 'canceled'
+    | 'voicemail';
+
 export interface CallHistoryEntry {
     id: string;
+    callSid?: string;
     direction: CallDirection;
     phoneNumber: string;
+    leadName?: string | null;
+    callMode?: 'direct' | 'script' | 'ai_agent';
     timestamp: Date;
     duration: number; // in seconds
-    status: 'completed' | 'missed' | 'rejected';
+    status: CallOutcomeStatus;
 }
 
 export type CallHistoryFilter = 'all' | 'incoming' | 'outgoing' | 'missed';

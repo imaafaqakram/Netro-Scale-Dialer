@@ -63,31 +63,142 @@ Create a project at [supabase.com](https://supabase.com) and note:
 
 ### 2.2 Run Database Migration
 
-Go to **SQL Editor** and run the contents of `supabase-migration.sql`.
+Go to **SQL Editor** and run these files in order — each is idempotent (safe to
+re-run):
+
+1. `supabase-migration-000-base-schema.sql` — **only on a brand-new project
+   that doesn't already have a `user_phone_numbers` table.** If you're on the
+   original project where it already exists, skip this one or it'll no-op
+   harmlessly (`CREATE TABLE IF NOT EXISTS`) — but on a fresh project, every
+   file below assumes this table already exists and will fail with
+   `relation "user_phone_numbers" does not exist` if you skip it.
+2. `supabase-migration.sql`
+3. `supabase-migration-002-fixes.sql`
+4. `supabase-migration-003-call-history.sql`
+5. `supabase-migration-004-multi-tenant.sql`
 
 This creates:
 - `user_phone_numbers` table (with voice feature columns)
 - `call_recordings` table (for recordings & voicemails)
-- RLS policies for security
+- `call_history` table (permanent server-side call log)
+- `organizations` / `organization_members` / `super_admins` tables (multi-tenant
+  roles — see 2.5 below)
+- RLS policies for security, scoped per-organization
+
+> **If you already ran `supabase-migration.sql` before today:** you must also run
+> `supabase-migration-002-fixes.sql` — it fixes a schema bug where every normal
+> call recording (not voicemail) silently failed to save because of a mismatched
+> CHECK constraint. Without it, call recording will look "enabled" in Settings but
+> nothing will ever show up in Recordings.
 
 ### 2.3 Create Users
 
-Go to **Authentication → Users → Add User** to create email/password accounts.
+Go to **Authentication → Users → Add User** to create email/password accounts —
+or, once 2.5 below is done, invite them from the app's **Admin** page instead.
 
 ### 2.4 Assign Phone Numbers
 
-In **Table Editor → user_phone_numbers**, insert rows:
+Once you have at least one org_admin (see 2.5), assign numbers from the app's
+**Admin** page instead of by hand. To do it manually anyway (e.g. before any
+admin exists), insert rows in **Table Editor → user_phone_numbers**:
 
 | Column | Example |
 |---|---|
 | `user_id` | User's UUID from Auth |
+| `org_id` | The organization's UUID from the `organizations` table |
 | `phone_number` | `+13072075599` |
 | `friendly_name` | `Main Line` |
 | `is_default` | `true` |
 
+### 2.5 Bootstrap Multi-Tenant Roles
+
+`supabase-migration-004-multi-tenant.sql` adds organizations, per-org roles
+(`org_admin` / `agent`), and a platform-wide `super_admin` role — see the
+comment block at the top of that file for the full model. It automatically
+migrates any users that already existed before you ran it into one "Default
+Organization" as `org_admin`, so nobody who could already manage their own
+numbers loses access.
+
+There's one step it **cannot** do for you: granting the very first
+`super_admin`. Nothing in the app can grant that role to itself — it has to be
+inserted directly. In **SQL Editor**, run once (with your own user's UUID from
+**Authentication → Users**):
+
+```sql
+insert into super_admins (user_id) values ('YOUR-USER-UUID-HERE');
+```
+
+After that, log in and you'll see an **Admin** link (if you're an `org_admin`
+of some organization) and a **Super Admin** link (platform-wide) in the
+sidebar. From Super Admin you can create new organizations (each with its own
+first `org_admin`, invited by email); from Admin, an `org_admin` invites
+`agent`s into their own organization and assigns them phone numbers.
+
+**Known limitation:** an organization's `suspended` flag (toggle in Super
+Admin) is currently a record-keeping flag only — it does not yet block that
+organization's users from logging in or making calls. Enforcing it is a
+follow-up, not yet wired into `middleware.ts` or the Twilio webhooks.
+
 ---
 
-## Step 3: Configure Environment
+## Step 3: Google Sheets CRM Setup (Optional)
+
+Every completed call and voicemail gets transcribed and written as a row in a Google
+Sheet you control — one row per client phone number, updated on each new call. This
+requires a Google Cloud **service account**, not your personal Google login.
+
+### 3.1 Create the service account
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and create a
+   project (or pick an existing one).
+2. **APIs & Services → Library** → search "Google Sheets API" → **Enable**.
+3. **IAM & Admin → Service Accounts → Create Service Account**. Name it anything
+   (e.g. `netro-scale-sheets`). No project roles are needed — it only needs access to
+   the specific sheet you share with it in step 3.3.
+4. Open the new service account → **Keys → Add Key → Create new key → JSON**. This
+   downloads a `.json` file — treat it like a password, it grants write access to
+   anything shared with it.
+
+### 3.2 Set the credential
+
+Open the downloaded JSON file and copy its **entire contents** into the
+`GOOGLE_SERVICE_ACCOUNT_KEY` environment variable (see Step 4 below) — paste the
+whole JSON object as one value. This must be a server-side env var only. Never paste
+it into the app's Settings page or any other browser-facing field — unlike the AI
+provider API keys in Settings, this credential can access anything shared with it,
+not just spend a balance, so it does not belong in a database or browser-editable
+setting.
+
+### 3.3 Create and share the sheet
+
+1. Create a new Google Sheet (or use an existing one) — any name, any tab name. Leave
+   it empty; the app creates its own header row on the first write.
+2. Click **Share**, and share it with the service account's email address (the
+   `client_email` field in the JSON key file — looks like
+   `netro-scale-sheets@your-project.iam.gserviceaccount.com`) with **Editor** access.
+3. Copy the **Sheet ID** from the sheet's URL:
+   `https://docs.google.com/spreadsheets/d/`**`THIS_PART`**`/edit`.
+4. Paste that ID into **Settings → AI Voice Agent → Google Sheet ID** in the app (each
+   user/number can point at their own sheet).
+
+### 3.4 Call transcription
+
+Set at least one of these server-side env vars, or CRM sync will run but every row's
+"Last Query"/"Last Transcript" columns will stay blank:
+
+- `DEEPGRAM_API_KEY` — get one at [deepgram.com](https://deepgram.com) (real free-trial
+  credit). Can also be set per-user in Settings instead of/in addition to the env var.
+- `WHISPER_ENDPOINT_URL` — base URL of a self-hosted, OpenAI-API-compatible Whisper
+  server (e.g. `faster-whisper-server`, `LocalAI`), used as a fallback if Deepgram is
+  unset or a request to it fails. Fully free/open-source, but needs its own always-on
+  server — it cannot run inside this app's Vercel serverless functions.
+
+If both are unset, calls/voicemails still get recorded and logged to the sheet — just
+without a transcript or AI-generated summary.
+
+---
+
+## Step 4: Configure Environment
 
 Copy `.env.example` to `.env.local` and fill in your values:
 
@@ -103,11 +214,18 @@ TWILIO_API_KEY=SKxxxxxxxx
 TWILIO_API_SECRET=your-secret
 TWILIO_TWIML_APP_SID=APxxxxxxxx
 TWILIO_DEFAULT_NUMBER=+1XXXXXXXXXX
+
+# Google Sheets CRM (optional — see Step 3)
+GOOGLE_SERVICE_ACCOUNT_KEY={"type":"service_account","client_email":"...","private_key":"...", ...}
+
+# Call transcription (optional — see Step 3.4)
+DEEPGRAM_API_KEY=your-deepgram-key
+WHISPER_ENDPOINT_URL=https://your-whisper-server.example.com
 ```
 
 ---
 
-## Step 4: Run Locally
+## Step 5: Run Locally
 
 ### Terminal 1: Start ngrok
 

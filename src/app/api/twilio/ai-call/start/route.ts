@@ -19,6 +19,7 @@ export async function POST(request: NextRequest) {
         const to = body.to || body.phoneNumber || '';
         const requestedCallerId = body.callerId || process.env.TWILIO_DEFAULT_NUMBER || '+13072076444';
         const leadName = (body.leadName || body.name || '').toString().trim();
+        const leadEmail = (body.leadEmail || body.email || '').toString().trim();
         const leadId = body.leadId || '';
 
         if (!to) {
@@ -75,6 +76,7 @@ export async function POST(request: NextRequest) {
             to: cleanTo,
             from: cleanCallerId,
             leadName,
+            leadEmail,
             leadId,
         });
 
