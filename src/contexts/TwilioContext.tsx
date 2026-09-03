@@ -47,18 +47,6 @@ export function useTwilio(): TwilioContextValue {
 
 export function TwilioProvider({ children }: { children: ReactNode }) {
     const {
-        device,
-        status: deviceStatus,
-        error: deviceError,
-        incomingCall,
-        incomingCallInfo,
-        twilioIdentity,
-        makeCall,
-        acceptIncomingCall: rawAccept,
-        rejectIncomingCall: rawReject,
-    } = useTwilioDevice();
-
-    const {
         activeCall,
         callStatus,
         isMuted,
@@ -70,6 +58,27 @@ export function TwilioProvider({ children }: { children: ReactNode }) {
         toggleMute,
         sendDTMF,
     } = useCallState();
+
+    // Registers a fresh outgoing Call with the call-state layer synchronously, in the
+    // same tick it's created (see useTwilioDevice.makeCall) — not after an extra
+    // await/round-trip back through this component, which is where early call events
+    // used to get dropped and the active-call UI never showed anything.
+    const registerOutgoingCall = useCallback(
+        (call: Call, explicitNumber: string) => setActiveCall(call, 'outgoing', explicitNumber),
+        [setActiveCall]
+    );
+
+    const {
+        device,
+        status: deviceStatus,
+        error: deviceError,
+        incomingCall,
+        incomingCallInfo,
+        twilioIdentity,
+        makeCall,
+        acceptIncomingCall: rawAccept,
+        rejectIncomingCall: rawReject,
+    } = useTwilioDevice(registerOutgoingCall);
 
     const [callerDisplayName, setCallerDisplayName] = useState<string | null>(null);
 

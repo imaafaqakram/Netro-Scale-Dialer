@@ -72,10 +72,10 @@ export function GlobalDialerFAB() {
             setRecentCalls(prev => [target, ...prev.slice(0, 4)]);
         }
 
-        const call = await twilio.makeCall(target);
-        if (call) {
-            twilio.setActiveCall(call, 'outgoing', target);
-        }
+        // twilio.makeCall() already registers the call with the active-call state layer
+        // synchronously as soon as it's created — calling setActiveCall again here would
+        // double-attach listeners to the same Call object.
+        await twilio.makeCall(target);
     };
 
     const isOnCall = twilio.callStatus === 'connected' || twilio.callStatus === 'connecting' || twilio.callStatus === 'ringing';

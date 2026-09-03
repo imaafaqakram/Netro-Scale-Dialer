@@ -62,6 +62,10 @@ export function useCallState(): UseCallStateReturn {
             return;
         }
 
+        // Guard against re-registering the same call twice (would double-attach listeners
+        // and double-count the duration timer). Each call object should be wired up once.
+        if (call === activeCall) return;
+
         setActiveCallState(call);
         setDirection(callDirection);
         setCallStatus('connecting');
@@ -112,7 +116,7 @@ export function useCallState(): UseCallStateReturn {
             setCallStatus('disconnected');
             stopDurationTimer();
         });
-    }, [startDurationTimer, stopDurationTimer]);
+    }, [activeCall, startDurationTimer, stopDurationTimer]);
 
     // Hangup call
     const hangup = useCallback(() => {
