@@ -66,7 +66,7 @@ export function Header({ deviceStatus = 'ready', error, user, onMenuToggle }: He
                     <button
                         className={`${styles.statusPill} ${styles[deviceStatus]}`}
                         onClick={() => setShowStatusTooltip(!showStatusTooltip)}
-                        title={error || 'Twilio Device Status'}
+                        title={error || 'Device Status'}
                     >
                         <span className={styles.statusDot} />
                         <span className={styles.statusText}>

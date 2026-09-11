@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import twilio from 'twilio';
+import { getSignalWireClient } from '@/lib/signalwire/restClient';
 
 export async function POST(request: NextRequest) {
     try {
@@ -10,16 +10,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'callSid is required' }, { status: 400 });
         }
 
-        const accountSid = process.env.TWILIO_ACCOUNT_SID;
-        const apiKey = process.env.TWILIO_API_KEY;
-        const apiSecret = process.env.TWILIO_API_SECRET;
-
-        if (!accountSid || !apiKey || !apiSecret) {
-            return NextResponse.json({ error: 'Twilio credentials not configured' }, { status: 500 });
-        }
-
-        const client = twilio(apiKey, apiSecret, { accountSid });
-
+        const client = getSignalWireClient();
         await client.calls(callSid).update({ status: 'completed' });
 
         console.log(`[Campaign Cancel] Terminated call ${callSid}`);

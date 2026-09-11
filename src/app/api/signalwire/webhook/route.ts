@@ -1,17 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { getPublicAppUrl } from '@/lib/url'
+import { getUserIdForSipUsername, sipUsernameFor } from '@/lib/signalwire/sipCredentials'
+import { getSignalWireConfig } from '@/lib/signalwire/config'
 
-// This route handles:
+// This route is set as BOTH the purchased number's inbound voice_url AND the SIP
+// endpoint's call_request_url (see src/lib/signalwire/sipCredentials.ts), mirroring
+// how a single Twilio TwiML App Voice URL used to cover both directions. It handles:
 // 1. Incoming calls - routes through the AI agent & softphone with voicemail fallback
 // 2. Outgoing calls - routes direct softphone calls, intro scripts, or AI calls with recording
-// Twilio sends form-encoded data via POST or query params via GET.
+// SignalWire sends form-encoded data via POST or query params via GET, same as Twilio.
 
 function twimlResponse(twiml: string): NextResponse {
-    console.log(`[Twilio TwiML Response]\n${twiml}`)
+    console.log(`[SignalWire TwiML Response]\n${twiml}`)
     return new NextResponse(twiml, {
         headers: { 'Content-Type': 'text/xml' },
     })
+}
+
+// True when `From` is a SIP URI identifying one of our own registered browser
+// softphones (e.g. "sip:u1a2b3c@netroscale-llc.sip.signalwire.com") rather than
+// a real PSTN caller's E.164 number — replaces Twilio's "client:" prefix check.
+function isFromOurSipEndpoint(from: string): boolean {
+    return from.startsWith('sip:') || from.includes('@')
+}
+
+function sipUsernameFromUri(uri: string): string {
+    const withoutScheme = uri.replace(/^sip:/, '')
+    return withoutScheme.split('@')[0]
 }
 
 // Clean and ensure phone numbers are strictly in E.164 format (+1XXXXXXXXXX)
@@ -25,7 +41,7 @@ function formatE164(phone: string): string {
     return `+${clean}`
 }
 
-// Create a Supabase client without cookies (webhook requests come from Twilio, not browser)
+// Create a Supabase client without cookies (webhook requests come from SignalWire, not browser)
 function createSupabaseAdmin() {
     return createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -68,7 +84,7 @@ async function extractParams(request: NextRequest): Promise<Record<string, strin
                 })
             }
         } catch (e) {
-            console.error('[Twilio Webhook] Param extraction error:', e)
+            console.error('[SignalWire Webhook] Param extraction error:', e)
         }
     }
 
@@ -79,61 +95,35 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
     try {
         const params = await extractParams(request)
 
-        console.log('[Twilio Webhook] Received params:', JSON.stringify(params))
+        console.log('[SignalWire Webhook] Received params:', JSON.stringify(params))
 
         const from = params['From'] || ''
         const direction = params['Direction'] || ''
         const callSid = params['CallSid'] || ''
 
-        console.log(`[Twilio Webhook] Raw params: From=${from}, Direction=${direction}, To=${params['To']}, CallSid=${callSid}`)
+        console.log(`[SignalWire Webhook] Raw params: From=${from}, Direction=${direction}, To=${params['To']}, CallSid=${callSid}`)
 
         // ─── Determine call direction ─────────────────────────────────────────
-        // OUTGOING: From starts with "client:" — browser SDK always sets this.
-        //           Also treat explicit outbound-api direction as outgoing.
-        const isOutgoing = from.startsWith('client:') || direction === 'outbound-api'
+        // OUTGOING: From is a SIP URI identifying one of our own registered SIP
+        //           endpoints (our browser softphones always dial as one). Also
+        //           treat explicit outbound-api direction as outgoing.
+        const isOutgoing = isFromOurSipEndpoint(from) || direction === 'outbound-api'
 
         if (isOutgoing) {
-            let to = params['ToNumber'] ||
-                     params['phoneNumber'] ||
-                     params['PhoneNumber'] ||
-                     params['called'] ||
-                     params['Called'] ||
-                     params['destination'] ||
-                     params['number'] ||
-                     params['phone_number'] ||
-                     ''
-
-            if (!to || to.startsWith('AP') || to.startsWith('client:')) {
-                const twilioTo = params['To'] || ''
-                if (twilioTo && !twilioTo.startsWith('AP') && !twilioTo.startsWith('client:')) {
-                    to = twilioTo
-                }
-            }
-
-            if (!to || to.startsWith('AP') || to.startsWith('client:')) {
-                const digitParam = Object.entries(params).find(([k, v]) =>
-                    k !== 'From' &&
-                    k !== 'CallSid' &&
-                    !v.startsWith('AP') &&
-                    !v.startsWith('client:') &&
-                    !v.startsWith('CA') &&
-                    !v.startsWith('AC') &&
-                    !v.startsWith('SK') &&
-                    v.replace(/[^0-9]/g, '').length >= 7
-                )
-                if (digitParam) to = digitParam[1]
-            }
-
-            console.log(`[Twilio Webhook] OUTGOING → to=${to}, from=${from}`)
+            // Our SIP endpoints always dial the real destination directly as the
+            // Request-URI (see makeCall() in useSignalWireDevice.ts), so `To` is
+            // already the actual number — no more parameter-guessing needed here.
+            const to = params['To'] || ''
+            console.log(`[SignalWire Webhook] OUTGOING → to=${to}, from=${from}`)
             return await handleOutgoingCall(to, from, params, request)
         }
 
-        // INCOMING: real phone call hitting our Twilio number.
+        // INCOMING: real phone call hitting our SignalWire number.
         const to = params['To'] || params['Called'] || params['called'] || ''
-        console.log(`[Twilio Webhook] INCOMING → to=${to}, from=${from}, direction=${direction}`)
+        console.log(`[SignalWire Webhook] INCOMING → to=${to}, from=${from}, direction=${direction}`)
         return await handleIncomingCall(to, from, request)
     } catch (error) {
-        console.error('[Twilio Webhook] Error:', error)
+        console.error('[SignalWire Webhook] Error:', error)
         return twimlResponse(`
             <Response>
                 <Say>An error occurred. Please check server logs.</Say>
@@ -151,15 +141,19 @@ export async function GET(request: NextRequest) {
 }
 
 async function handleOutgoingCall(to: string, from: string, params: Record<string, string>, request: NextRequest): Promise<NextResponse> {
-    const userId = from.startsWith('client:') ? from.replace('client:', '') : ''
+    const sipUsername = isFromOurSipEndpoint(from) ? sipUsernameFromUri(from) : ''
+    const userId = sipUsername ? (await getUserIdForSipUsername(sipUsername)) || '' : ''
     const appUrl = await getPublicAppUrl(request)
-    const callMode = (params['callMode'] || params['mode'] || 'direct').toLowerCase()
+    // Custom SIP header set by the browser (X-Call-Mode) if SignalWire forwards
+    // it through to this webhook's params; falls back to 'direct' (this app's
+    // most common case) if not, rather than depending on that being confirmed.
+    const callMode = (params['X-Call-Mode'] || params['callMode'] || params['mode'] || 'direct').toLowerCase()
 
     // 0. Special: In-Browser AI Test Call (*99 or 'test')
     if (to === '*99' || to === '99' || to.toLowerCase() === 'test' || callMode === 'test') {
-        console.log(`[Twilio Webhook] In-Browser AI Voice Test Call connected for user ${userId}`)
+        console.log(`[SignalWire Webhook] In-Browser AI Voice Test Call connected for user ${userId}`)
         const greeting = `Hello! This is your Netro Scale AI voice agent test line. I am running live with your saved script and knowledge base. Go ahead and ask me a question.`
-        const turnActionUrl = `${appUrl}/api/twilio/ai-call/turn?agentUserId=${encodeURIComponent(userId || 'user')}&amp;callerId=%2B13072076444&amp;turnCount=1`
+        const turnActionUrl = `${appUrl}/api/signalwire/ai-call/turn?agentUserId=${encodeURIComponent(userId || 'user')}&amp;callerId=%2B13072076444&amp;turnCount=1`
 
         return twimlResponse(`
             <Response>
@@ -170,8 +164,8 @@ async function handleOutgoingCall(to: string, from: string, params: Record<strin
         `)
     }
 
-    if (!to || to.startsWith('AP') || to.startsWith('client:')) {
-        console.error('[Twilio Webhook] No valid destination number in params:', params)
+    if (!to) {
+        console.error('[SignalWire Webhook] No valid destination number in params:', params)
         return twimlResponse(`
             <Response>
                 <Say>No destination number was provided. Please check the dialed number and try again.</Say>
@@ -181,10 +175,10 @@ async function handleOutgoingCall(to: string, from: string, params: Record<strin
 
     const cleanTo = formatE164(to)
 
-    // 1. Check if callerId was explicitly sent in params
+    // 1. Check if callerId was explicitly sent (X-Caller-Id header, or a param)
     let callerId = ''
-    const paramCallerId = (params['callerId'] || params['CallerId'] || params['fromNumber'] || params['FromNumber'] || '').trim()
-    if (paramCallerId && !paramCallerId.startsWith('client:') && paramCallerId.replace(/[^0-9]/g, '').length >= 7) {
+    const paramCallerId = (params['X-Caller-Id'] || params['callerId'] || params['CallerId'] || params['fromNumber'] || params['FromNumber'] || '').trim()
+    if (paramCallerId && paramCallerId.replace(/[^0-9]/g, '').length >= 7) {
         callerId = paramCallerId
     }
 
@@ -208,39 +202,36 @@ async function handleOutgoingCall(to: string, from: string, params: Record<strin
                 recordingEnabled = !!defaultData.call_recording_enabled
             }
         } catch (e) {
-            console.error('[Twilio Webhook] Error fetching callerId/settings from Supabase:', e)
+            console.error('[SignalWire Webhook] Error fetching callerId/settings from Supabase:', e)
         }
     }
 
     // 3. Fallback to default number
     if (!callerId) {
-        callerId = process.env.TWILIO_DEFAULT_NUMBER || 
-                   process.env.TWILIO_PHONE_NUMBER || 
-                   process.env.TWILIO_CALLER_ID || 
-                   '+13072076444'
+        callerId = process.env.SIGNALWIRE_DEFAULT_NUMBER || '+13072076444'
     }
 
     callerId = formatE164(callerId) || '+13072076444'
 
     const recordAttr = recordingEnabled ? ' record="record-from-answer-dual"' : ''
     const recordCallbackAttr = recordingEnabled
-        ? ` recordingStatusCallback="${appUrl}/api/twilio/recording-status?user_id=${encodeURIComponent(userId || 'user')}" recordingStatusCallbackEvent="completed"`
+        ? ` recordingStatusCallback="${appUrl}/api/signalwire/recording-status?user_id=${encodeURIComponent(userId || 'user')}" recordingStatusCallbackEvent="completed"`
         : ''
 
     // Per-leg call lifecycle callback -> permanent call_history row (see
-    // src/app/api/twilio/call-status/route.ts). Attached to <Number> itself (not
+    // src/app/api/signalwire/call-status/route.ts). Attached to <Number> itself (not
     // <Dial>) so it reports this specific PSTN leg's CallSid/CallStatus/CallDuration —
     // that leg is the source of truth for what actually happened on this call.
     const statusCallbackUrlFor = (mode: 'direct' | 'script' | 'ai_agent') =>
-        `${appUrl}/api/twilio/call-status?user_id=${encodeURIComponent(userId || 'user')}&amp;direction=outgoing&amp;call_mode=${mode}`
+        `${appUrl}/api/signalwire/call-status?user_id=${encodeURIComponent(userId || 'user')}&amp;direction=outgoing&amp;call_mode=${mode}`
     const statusCallbackAttrFor = (mode: 'direct' | 'script' | 'ai_agent') =>
         ` statusCallback="${statusCallbackUrlFor(mode)}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed"`
 
-    console.log(`[Twilio Webhook] Outgoing call to ${cleanTo} with mode=${callMode}, callerId=${callerId}, recording=${recordingEnabled}`)
+    console.log(`[SignalWire Webhook] Outgoing call to ${cleanTo} with mode=${callMode}, callerId=${callerId}, recording=${recordingEnabled}`)
 
     // Mode 1: AI Agent
     if (callMode === 'ai_agent') {
-        const aiUrl = `${appUrl}/api/twilio/ai-call?agentUserId=${encodeURIComponent(userId || 'user')}&amp;callerId=${encodeURIComponent(callerId)}`
+        const aiUrl = `${appUrl}/api/signalwire/ai-call?agentUserId=${encodeURIComponent(userId || 'user')}&amp;callerId=${encodeURIComponent(callerId)}`
         return twimlResponse(`
             <Response>
                 <Dial answerOnBridge="true" callerId="${callerId}"${recordAttr}${recordCallbackAttr}>
@@ -252,7 +243,7 @@ async function handleOutgoingCall(to: string, from: string, params: Record<strin
 
     // Mode 2: Script Intro + Auto-Transfer
     if (callMode === 'script') {
-        const scriptUrl = `${appUrl}/api/twilio/ai-call/script-intro`
+        const scriptUrl = `${appUrl}/api/signalwire/ai-call/script-intro`
         return twimlResponse(`
             <Response>
                 <Dial answerOnBridge="true" callerId="${callerId}"${recordAttr}${recordCallbackAttr}>
@@ -307,7 +298,7 @@ async function handleIncomingCall(to: string, from: string, request: NextRequest
             }
         }
     } catch (e) {
-        console.error(`[Twilio Webhook] Number lookup for ${dialedNumber} threw (transient DB/network error):`, e)
+        console.error(`[SignalWire Webhook] Number lookup for ${dialedNumber} threw (transient DB/network error):`, e)
     }
 
     let userId: string | null = numberRecord?.user_id || null
@@ -332,7 +323,7 @@ async function handleIncomingCall(to: string, from: string, request: NextRequest
                 usedFallbackUser = true
             }
         } catch (e) {
-            console.error('[Twilio Webhook] Fallback "any configured user" lookup also failed:', e)
+            console.error('[SignalWire Webhook] Fallback "any configured user" lookup also failed:', e)
         }
     }
 
@@ -340,13 +331,13 @@ async function handleIncomingCall(to: string, from: string, request: NextRequest
     const appUrl = await getPublicAppUrl(request)
 
     // Caller ID shown on the softphone = the person actually calling in.
-    const inboundCallerId = formatE164(from) || from || to || process.env.TWILIO_DEFAULT_NUMBER || '+13072076444'
+    const inboundCallerId = formatE164(from) || from || to || process.env.SIGNALWIRE_DEFAULT_NUMBER || '+13072076444'
 
     if (!userId) {
         // Nobody is configured in the system at all — not a transient hiccup, there is
         // truly no one to ring and no voicemail box to record into (voicemail is keyed
         // by user_id).
-        console.warn(`[Twilio Webhook] Incoming call to ${to} but no user is configured in user_phone_numbers at all`)
+        console.warn(`[SignalWire Webhook] Incoming call to ${to} but no user is configured in user_phone_numbers at all`)
         return twimlResponse(`
             <Response>
                 <Say voice="Polly.Joanna">Thank you for calling. No one is available to take your call right now. Please try again later.</Say>
@@ -356,43 +347,37 @@ async function handleIncomingCall(to: string, from: string, request: NextRequest
     }
 
     if (usedFallbackUser) {
-        console.warn(`[Twilio Webhook] Incoming call to ${to} has no matching number mapping — falling back to user ${userId}. Add ${to} to user_phone_numbers to fix this.`)
+        console.warn(`[SignalWire Webhook] Incoming call to ${to} has no matching number mapping — falling back to user ${userId}. Add ${to} to user_phone_numbers to fix this.`)
     }
 
-    console.log(`[Twilio Webhook] Incoming call from ${from} → ringing softphone for user ${agentUserId}`)
+    console.log(`[SignalWire Webhook] Incoming call from ${from} → ringing softphone for user ${agentUserId}`)
 
     // Record the call if the number has recording enabled (default on).
     const recordingEnabled = numberRecord ? !!numberRecord.call_recording_enabled : true
     const recordAttr = recordingEnabled ? ' record="record-from-answer-dual"' : ''
     const recordCallbackAttr = recordingEnabled
-        ? ` recordingStatusCallback="${appUrl}/api/twilio/recording-status?user_id=${encodeURIComponent(agentUserId)}" recordingStatusCallbackEvent="completed"`
+        ? ` recordingStatusCallback="${appUrl}/api/signalwire/recording-status?user_id=${encodeURIComponent(agentUserId)}" recordingStatusCallbackEvent="completed"`
         : ''
 
     // Voicemail fallback if the softphone does not answer within the timeout.
     const voicemailEnabled = numberRecord ? !!numberRecord.voicemail_enabled : true
     const actionAttr = voicemailEnabled
-        ? ` action="${appUrl}/api/twilio/voicemail?user_id=${encodeURIComponent(agentUserId)}&amp;from=${encodeURIComponent(from || '')}"`
+        ? ` action="${appUrl}/api/signalwire/voicemail?user_id=${encodeURIComponent(agentUserId)}&amp;from=${encodeURIComponent(from || '')}"`
         : ''
 
     // Per-leg call lifecycle callback -> permanent call_history row. From/To on this
     // leg's callback are the callerId we set above (the real inbound caller) and the
-    // Client identity, so "From" is correctly the customer's number, not our own.
-    const statusCallbackAttr = ` statusCallback="${appUrl}/api/twilio/call-status?user_id=${encodeURIComponent(agentUserId)}&amp;direction=incoming&amp;call_mode=direct" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed"`
+    // SIP identity, so "From" is correctly the customer's number, not our own.
+    const statusCallbackAttr = ` statusCallback="${appUrl}/api/signalwire/call-status?user_id=${encodeURIComponent(agentUserId)}&amp;direction=incoming&amp;call_mode=direct" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed"`
+
+    const { sipDomain } = getSignalWireConfig()
+    const sipTarget = `sip:${sipUsernameFor(agentUserId)}@${sipDomain}`
 
     return twimlResponse(`
         <Response>
             <Dial answerOnBridge="true" callerId="${inboundCallerId}"${recordAttr}${recordCallbackAttr}${actionAttr} timeout="25">
-                <Client${statusCallbackAttr}>${escapeXml(agentUserId)}</Client>
+                <Sip${statusCallbackAttr}>${sipTarget}</Sip>
             </Dial>
         </Response>
     `)
-}
-
-function escapeXml(unsafe: string): string {
-    return unsafe
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&apos;')
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import twilio from 'twilio';
+import { getSignalWireClient } from '@/lib/signalwire/restClient';
 import { updateCall, getCall, getAllActiveCalls, LiveAICall } from '@/lib/ai/callStore';
 import { createSupabaseAdmin } from '@/lib/supabase/admin';
 import { upsertCallHistory, CallHistoryStatus } from '@/lib/callHistory';
@@ -50,7 +50,7 @@ async function extractParams(request: NextRequest): Promise<Record<string, strin
     return params;
 }
 
-// Twilio Status Callback & Answering Machine Detection (AMD) Webhook
+// SignalWire Status Callback & Answering Machine Detection (AMD) Webhook
 export async function POST(request: NextRequest) {
     try {
         const params = await extractParams(request);
@@ -76,15 +76,10 @@ export async function POST(request: NextRequest) {
                 updates.currentStage = 'voicemail';
                 console.log(`[AI Call AMD] Answering machine detected for ${callSid} (${answeredBy}). Terminating call gracefully.`);
 
-                // Terminate call on Twilio side so the queue advances immediately
+                // Terminate call on SignalWire's side so the queue advances immediately
                 try {
-                    const accountSid = process.env.TWILIO_ACCOUNT_SID;
-                    const apiKey = process.env.TWILIO_API_KEY;
-                    const apiSecret = process.env.TWILIO_API_SECRET;
-                    if (accountSid && apiKey && apiSecret) {
-                        const client = twilio(apiKey, apiSecret, { accountSid });
-                        await client.calls(callSid).update({ status: 'completed' });
-                    }
+                    const client = getSignalWireClient();
+                    await client.calls(callSid).update({ status: 'completed' });
                 } catch (e) {
                     console.warn(`[AI Call AMD] Error terminating voicemail call ${callSid}:`, e);
                 }
@@ -162,7 +157,7 @@ export async function POST(request: NextRequest) {
 
             // AI-agent calls already have a text transcript from the turn-by-turn
             // conversation — no audio recording to transcribe (this call path doesn't
-            // set Twilio's `record` option), so pass it straight through.
+            // set SignalWire's `record` option), so pass it straight through.
             const transcript = (merged.turns || [])
                 .map((t) => `${t.role === 'user' ? 'Customer' : 'AI Agent'}: ${t.text}`)
                 .join('\n');
@@ -184,7 +179,7 @@ export async function POST(request: NextRequest) {
     }
 }
 
-// Frontend Polling Endpoint: GET /api/twilio/ai-call/status?callSid=CA... or ?callSids=CA1,CA2
+// Frontend Polling Endpoint: GET /api/signalwire/ai-call/status?callSid=CA... or ?callSids=CA1,CA2
 export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
@@ -196,36 +191,31 @@ export async function GET(request: NextRequest) {
         if (callSid) {
             let call = getCall(callSid);
 
-            // If not found in memory, try fetching live status from Twilio REST API
+            // If not found in memory, try fetching live status from SignalWire's REST API
             if (!call || call.status === 'initiated' || call.status === 'ringing') {
                 try {
-                    const accountSid = process.env.TWILIO_ACCOUNT_SID;
-                    const apiKey = process.env.TWILIO_API_KEY;
-                    const apiSecret = process.env.TWILIO_API_SECRET;
-                    if (accountSid && apiKey && apiSecret) {
-                        const client = twilio(apiKey, apiSecret, { accountSid });
-                        const twCall = await client.calls(callSid).fetch();
-                        
-                        let mappedStatus: LiveAICall['status'] = 'in-progress';
-                        if (twCall.status === 'queued') mappedStatus = 'initiated';
-                        else if (twCall.status === 'ringing') mappedStatus = 'ringing';
-                        else if (twCall.status === 'in-progress') mappedStatus = 'in-progress';
-                        else if (twCall.status === 'completed') mappedStatus = 'completed';
-                        else if (twCall.status === 'busy') mappedStatus = 'busy';
-                        else if (twCall.status === 'no-answer') mappedStatus = 'no-answer';
-                        else if (twCall.status === 'failed') mappedStatus = 'failed';
-                        else if (twCall.status === 'canceled') mappedStatus = 'canceled';
+                    const client = getSignalWireClient();
+                    const swCall = await client.calls(callSid).fetch();
 
-                        const duration = parseInt(twCall.duration || '0', 10);
-                        call = updateCall(callSid, {
-                            status: mappedStatus,
-                            duration: duration || (call?.duration || 0),
-                            to: twCall.to,
-                            from: twCall.from,
-                        }) || undefined;
-                    }
+                    let mappedStatus: LiveAICall['status'] = 'in-progress';
+                    if (swCall.status === 'queued') mappedStatus = 'initiated';
+                    else if (swCall.status === 'ringing') mappedStatus = 'ringing';
+                    else if (swCall.status === 'in-progress') mappedStatus = 'in-progress';
+                    else if (swCall.status === 'completed') mappedStatus = 'completed';
+                    else if (swCall.status === 'busy') mappedStatus = 'busy';
+                    else if (swCall.status === 'no-answer') mappedStatus = 'no-answer';
+                    else if (swCall.status === 'failed') mappedStatus = 'failed';
+                    else if (swCall.status === 'canceled') mappedStatus = 'canceled';
+
+                    const duration = parseInt(swCall.duration || '0', 10);
+                    call = updateCall(callSid, {
+                        status: mappedStatus,
+                        duration: duration || (call?.duration || 0),
+                        to: swCall.to,
+                        from: swCall.from,
+                    }) || undefined;
                 } catch (e) {
-                    console.warn(`[AI Status API] Could not fetch Twilio call ${callSid}:`, e);
+                    console.warn(`[AI Status API] Could not fetch SignalWire call ${callSid}:`, e);
                 }
             }
 

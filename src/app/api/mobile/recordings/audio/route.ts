@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getUserFromBearer } from '@/lib/apiMobileAuth'
+import { signalWireBasicAuth, getSignalWireConfig } from '@/lib/signalwire/config'
 
-// Streams a Twilio recording to the mobile app. Expo-Audio cannot attach HTTP
+// Streams a SignalWire recording to the mobile app. Expo-Audio cannot attach HTTP
 // basic-auth headers, so the app plays from this proxy URL with its bearer
-// token instead of hitting Twilio directly.
+// token instead of hitting SignalWire directly.
 
 export async function GET(request: NextRequest) {
     try {
@@ -19,34 +20,18 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'Recording URL required' }, { status: 400 })
         }
 
-        // Only allow proxying Twilio recording hosts
+        // Only allow proxying our own SignalWire space's recording host
+        const { space } = getSignalWireConfig()
         const parsed = new URL(recordingUrl)
-        if (!parsed.hostname.endsWith('twilio.com')) {
+        if (parsed.hostname !== space) {
             return NextResponse.json({ error: 'Unsupported recording host' }, { status: 400 })
         }
 
-        const accountSid = process.env.TWILIO_ACCOUNT_SID!
-        const apiKey = process.env.TWILIO_API_KEY!
-        const apiSecret = process.env.TWILIO_API_SECRET!
-
-        if (!accountSid || !apiKey || !apiSecret) {
-            return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
-        }
-
-        const authHeader = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
         const audioUrl = recordingUrl.endsWith('.mp3') ? recordingUrl : `${recordingUrl}.mp3`
 
-        let response = await fetch(audioUrl, {
-            headers: { Authorization: `Basic ${authHeader}` },
+        const response = await fetch(audioUrl, {
+            headers: { Authorization: `Basic ${signalWireBasicAuth()}` },
         })
-
-        if (!response.ok) {
-            // Fall back to Account SID auth
-            const fallbackAuth = Buffer.from(`${accountSid}:${apiSecret}`).toString('base64')
-            response = await fetch(audioUrl, {
-                headers: { Authorization: `Basic ${fallbackAuth}` },
-            })
-        }
 
         if (!response.ok) {
             console.error(`[Mobile Audio Proxy] Failed to fetch recording: ${response.status}`)

@@ -27,10 +27,10 @@ export async function middleware(request: NextRequest) {
         }
     )
 
-    // Allow Twilio webhook requests and Mobile API routes through without browser auth
-    // These routes come from Twilio servers, background webhooks, or mobile clients with Bearer tokens
+    // Allow SignalWire webhook requests and Mobile API routes through without browser auth
+    // These routes come from SignalWire servers, background webhooks, or mobile clients with Bearer tokens
     const pathname = request.nextUrl.pathname
-    if (pathname.startsWith('/api/twilio/') || pathname.startsWith('/api/mobile')) {
+    if (pathname.startsWith('/api/signalwire/') || pathname.startsWith('/api/mobile')) {
         return supabaseResponse
     }
 

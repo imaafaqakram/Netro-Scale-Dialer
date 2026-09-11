@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react
 import { useSearchParams } from 'next/navigation';
 import { AppLayout } from '@/components/Layout';
 import { createClient } from '@/lib/supabase';
-import { useTwilio } from '@/contexts/TwilioContext';
+import { useSignalWire } from '@/contexts/SignalWireContext';
 import styles from './page.module.css';
 
 interface Recording {
@@ -26,7 +26,7 @@ type TabType = 'call' | 'voicemail';
 function RecordingsContent() {
     const searchParams = useSearchParams();
     const tabFromUrl = searchParams.get('tab') as TabType | null;
-    const twilio = useTwilio();
+    const signalwire = useSignalWire();
 
     const [recordings, setRecordings] = useState<Recording[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
@@ -75,7 +75,7 @@ function RecordingsContent() {
         fetchRecordings();
     }, [fetchRecordings]);
 
-    // Audio playback (uses proxy to avoid Twilio auth issues)
+    // Audio playback (uses proxy to avoid SignalWire auth issues)
     const handlePlay = async (recording: Recording) => {
         // Stop current playback
         if (audioRef.current) {
@@ -88,7 +88,7 @@ function RecordingsContent() {
             return;
         }
 
-        // Use our proxy route which adds Twilio auth
+        // Use our proxy route which adds SignalWire auth
         const audioUrl = `/api/user/recordings/audio?url=${encodeURIComponent(recording.recording_url)}`;
 
         const audio = new Audio(audioUrl);
@@ -170,8 +170,8 @@ function RecordingsContent() {
 
     return (
         <AppLayout
-            deviceStatus={twilio.deviceStatus}
-            error={twilio.deviceError}
+            deviceStatus={signalwire.deviceStatus}
+            error={signalwire.deviceError}
             user={user || undefined}
         >
             <div className={styles.container}>

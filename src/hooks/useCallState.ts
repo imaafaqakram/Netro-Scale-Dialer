@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Call } from '@twilio/voice-sdk';
+import { SignalWireCall as Call } from '@/lib/signalwire/SignalWireCall';
 import type { CallStatus, CallDirection } from '@/types';
 
 interface UseCallStateReturn {

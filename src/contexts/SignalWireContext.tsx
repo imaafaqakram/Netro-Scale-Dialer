@@ -1,21 +1,19 @@
 'use client';
 
 import React, { createContext, useContext, ReactNode, useCallback, useState, useEffect } from 'react';
-import { Call } from '@twilio/voice-sdk';
-import { useTwilioDevice, IncomingCallInfo } from '@/hooks/useTwilioDevice';
+import { SignalWireCall as Call } from '@/lib/signalwire/SignalWireCall';
+import { useSignalWireDevice, IncomingCallInfo, CallOptions } from '@/hooks/useSignalWireDevice';
 import { useCallState } from '@/hooks/useCallState';
 import type { DeviceStatus, CallStatus, CallDirection } from '@/types';
 
-import { CallOptions } from '@/hooks/useTwilioDevice';
-
-interface TwilioContextValue {
+interface SignalWireContextValue {
     // Device
-    device: ReturnType<typeof useTwilioDevice>['device'];
+    device: ReturnType<typeof useSignalWireDevice>['device'];
     deviceStatus: DeviceStatus;
     deviceError: string | null;
     incomingCall: Call | null;
     incomingCallInfo: IncomingCallInfo | null;
-    twilioIdentity: string | null;
+    sipIdentity: string | null;
     makeCall: (phoneNumber: string, callerId?: string, options?: CallOptions) => Promise<Call | null>;
     acceptIncomingCall: () => void;
     rejectIncomingCall: () => void;
@@ -35,17 +33,17 @@ interface TwilioContextValue {
     sendDTMF: (digit: string) => void;
 }
 
-const TwilioContext = createContext<TwilioContextValue | null>(null);
+const SignalWireContext = createContext<SignalWireContextValue | null>(null);
 
-export function useTwilio(): TwilioContextValue {
-    const context = useContext(TwilioContext);
+export function useSignalWire(): SignalWireContextValue {
+    const context = useContext(SignalWireContext);
     if (!context) {
-        throw new Error('useTwilio must be used within a TwilioProvider');
+        throw new Error('useSignalWire must be used within a SignalWireProvider');
     }
     return context;
 }
 
-export function TwilioProvider({ children }: { children: ReactNode }) {
+export function SignalWireProvider({ children }: { children: ReactNode }) {
     const {
         activeCall,
         callStatus,
@@ -60,7 +58,7 @@ export function TwilioProvider({ children }: { children: ReactNode }) {
     } = useCallState();
 
     // Registers a fresh outgoing Call with the call-state layer synchronously, in the
-    // same tick it's created (see useTwilioDevice.makeCall) — not after an extra
+    // same tick it's created (see useSignalWireDevice.makeCall) — not after an extra
     // await/round-trip back through this component, which is where early call events
     // used to get dropped and the active-call UI never showed anything.
     const registerOutgoingCall = useCallback(
@@ -74,21 +72,20 @@ export function TwilioProvider({ children }: { children: ReactNode }) {
         error: deviceError,
         incomingCall,
         incomingCallInfo,
-        twilioIdentity,
+        sipIdentity,
         makeCall,
         acceptIncomingCall: rawAccept,
         rejectIncomingCall: rawReject,
-    } = useTwilioDevice(registerOutgoingCall);
+    } = useSignalWireDevice(registerOutgoingCall);
 
     const [callerDisplayName, setCallerDisplayName] = useState<string | null>(null);
 
     // Wrap accept to also set call state
     const acceptIncomingCall = useCallback(() => {
         if (incomingCall) {
-            const params = incomingCall.parameters as { From?: string };
-            // Prefer the real customer number carried via <Parameter> on a warm transfer
-            // over the raw From (which is just the business caller ID on transferred calls).
-            const callerNumber = incomingCallInfo?.customerNumber || params.From || 'Unknown';
+            // Prefer the real customer number carried via a custom SIP header on a warm
+            // transfer over the raw From (which is just the business caller ID otherwise).
+            const callerNumber = incomingCallInfo?.customerNumber || incomingCall.parameters.From || 'Unknown';
             setCallerDisplayName(incomingCallInfo?.leadName || null);
             rawAccept();
             setActiveCall(incomingCall, 'incoming', callerNumber);
@@ -105,13 +102,13 @@ export function TwilioProvider({ children }: { children: ReactNode }) {
         if (callStatus === 'idle') setCallerDisplayName(null);
     }, [callStatus]);
 
-    const value: TwilioContextValue = {
+    const value: SignalWireContextValue = {
         device,
         deviceStatus,
         deviceError,
         incomingCall,
         incomingCallInfo,
-        twilioIdentity,
+        sipIdentity,
         makeCall,
         acceptIncomingCall,
         rejectIncomingCall,
@@ -129,8 +126,8 @@ export function TwilioProvider({ children }: { children: ReactNode }) {
     };
 
     return (
-        <TwilioContext.Provider value={value}>
+        <SignalWireContext.Provider value={value}>
             {children}
-        </TwilioContext.Provider>
+        </SignalWireContext.Provider>
     );
 }

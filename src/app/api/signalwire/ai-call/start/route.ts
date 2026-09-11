@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import twilio from 'twilio';
+import { getSignalWireClient } from '@/lib/signalwire/restClient';
 import { createClient } from '@/lib/supabase/server';
 import { getPublicAppUrl } from '@/lib/url';
 import { registerCall } from '@/lib/ai/callStore';
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
         const to = body.to || body.phoneNumber || '';
-        const requestedCallerId = body.callerId || process.env.TWILIO_DEFAULT_NUMBER || '+13072076444';
+        const requestedCallerId = body.callerId || process.env.SIGNALWIRE_DEFAULT_NUMBER || '+13072076444';
         const leadName = (body.leadName || body.name || '').toString().trim();
         const leadEmail = (body.leadEmail || body.email || '').toString().trim();
         const leadId = body.leadId || '';
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
         const cleanTo = formatE164(to);
         const cleanCallerId = formatE164(requestedCallerId);
 
-        // agentUserId: prefer what the frontend sends (it's the Twilio client identity = Supabase user.id)
+        // agentUserId: prefer what the frontend sends (it's the softphone's SIP identity = Supabase user.id)
         let userId = body.agentUserId || '';
         if (!userId) {
             try {
@@ -42,18 +42,10 @@ export async function POST(request: NextRequest) {
 
         console.log(`[AI Call Start] agentUserId resolved to: ${userId}`);
 
-        const accountSid = process.env.TWILIO_ACCOUNT_SID;
-        const apiKey = process.env.TWILIO_API_KEY;
-        const apiSecret = process.env.TWILIO_API_SECRET;
-
-        if (!accountSid || !apiKey || !apiSecret) {
-            return NextResponse.json({ error: 'Twilio credentials not configured' }, { status: 500 });
-        }
-
-        const client = twilio(apiKey, apiSecret, { accountSid });
+        const client = getSignalWireClient();
         const appUrl = await getPublicAppUrl(request);
 
-        const aiWebhookUrl = `${appUrl}/api/twilio/ai-call?agentUserId=${encodeURIComponent(userId)}&callerId=${encodeURIComponent(cleanCallerId)}&leadName=${encodeURIComponent(leadName)}&leadId=${encodeURIComponent(leadId)}`;
+        const aiWebhookUrl = `${appUrl}/api/signalwire/ai-call?agentUserId=${encodeURIComponent(userId)}&callerId=${encodeURIComponent(cleanCallerId)}&leadName=${encodeURIComponent(leadName)}&leadId=${encodeURIComponent(leadId)}`;
 
         console.log(`[AI Call Start] Dialing customer ${cleanTo} from ${cleanCallerId} with webhook: ${aiWebhookUrl}`);
 
@@ -64,8 +56,8 @@ export async function POST(request: NextRequest) {
             machineDetection: 'Enable',
             machineDetectionTimeout: 20,
             asyncAmd: 'true',
-            asyncAmdStatusCallback: `${appUrl}/api/twilio/ai-call/status?agentUserId=${encodeURIComponent(userId)}&type=amd`,
-            statusCallback: `${appUrl}/api/twilio/ai-call/status?agentUserId=${encodeURIComponent(userId)}&leadName=${encodeURIComponent(leadName)}&leadId=${encodeURIComponent(leadId)}`,
+            asyncAmdStatusCallback: `${appUrl}/api/signalwire/ai-call/status?agentUserId=${encodeURIComponent(userId)}&type=amd`,
+            statusCallback: `${appUrl}/api/signalwire/ai-call/status?agentUserId=${encodeURIComponent(userId)}&leadName=${encodeURIComponent(leadName)}&leadId=${encodeURIComponent(leadId)}`,
             statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
         });
 

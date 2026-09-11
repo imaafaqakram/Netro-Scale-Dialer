@@ -3,6 +3,8 @@ import { generateAIResponse, ChatMessage } from '@/lib/ai/llm';
 import { DEFAULT_SYSTEM_PROMPT } from '@/lib/ai/prompts';
 import { updateCall, addCallTurn } from '@/lib/ai/callStore';
 import { getPublicAppUrl } from '@/lib/url';
+import { sipUsernameFor } from '@/lib/signalwire/sipCredentials';
+import { getSignalWireConfig } from '@/lib/signalwire/config';
 
 function escapeXml(unsafe: string): string {
     return unsafe
@@ -14,7 +16,7 @@ function escapeXml(unsafe: string): string {
 }
 
 function twimlResponse(twiml: string): NextResponse {
-    console.log(`[Twilio AI Turn Response]\n${twiml}`);
+    console.log(`[SignalWire AI Turn Response]\n${twiml}`);
     return new NextResponse(twiml, {
         headers: { 'Content-Type': 'text/xml' },
     });
@@ -29,15 +31,17 @@ function buildTransferTwiml(opts: {
     customerNumber: string;
 }): string {
     const { sayVoice, sayText, callerId, agentUserId, leadName, customerNumber } = opts;
+    const { sipDomain } = getSignalWireConfig();
+    const sipTarget = `sip:${sipUsernameFor(agentUserId)}@${sipDomain}`;
     return `
         <Response>
             <Say voice="${sayVoice}" language="en-US">${escapeXml(sayText)}</Say>
             <Dial answerOnBridge="true" callerId="${callerId}">
-                <Client>
-                    ${escapeXml(agentUserId)}
-                    <Parameter name="LeadName" value="${escapeXml(leadName || 'Unknown Caller')}" />
-                    <Parameter name="CustomerNumber" value="${escapeXml(customerNumber || callerId)}" />
-                </Client>
+                <Sip>
+                    ${sipTarget}
+                    <Header name="X-Lead-Name" value="${escapeXml(leadName || 'Unknown Caller')}" />
+                    <Header name="X-Customer-Number" value="${escapeXml(customerNumber || callerId)}" />
+                </Sip>
             </Dial>
         </Response>
     `;
@@ -112,7 +116,7 @@ async function handleTurn(request: NextRequest): Promise<NextResponse> {
 
         const speechResult = (params['SpeechResult'] || params['speech'] || params['Digits'] || '').trim();
         const agentUserId = params['agentUserId'] || params['userId'] || 'user';
-        const callerId = params['callerId'] || process.env.TWILIO_DEFAULT_NUMBER || '+13072076444';
+        const callerId = params['callerId'] || process.env.SIGNALWIRE_DEFAULT_NUMBER || '+13072076444';
         const leadName = params['leadName'] || '';
         const customerNumber = params['To'] || params['Called'] || callerId;
         const turnCount = parseInt(params['turnCount'] || '1', 10);
@@ -161,7 +165,7 @@ async function handleTurn(request: NextRequest): Promise<NextResponse> {
 
             return twimlResponse(`
                 <Response>
-                    <Gather input="speech dtmf" timeout="4" action="${appUrl}/api/twilio/ai-call/turn?agentUserId=${encodeURIComponent(agentUserId)}&amp;callerId=${encodeURIComponent(callerId)}&amp;leadName=${encodeURIComponent(leadName)}&amp;turnCount=${turnCount + 1}&amp;history=${encodeURIComponent(JSON.stringify(history))}">
+                    <Gather input="speech dtmf" timeout="4" action="${appUrl}/api/signalwire/ai-call/turn?agentUserId=${encodeURIComponent(agentUserId)}&amp;callerId=${encodeURIComponent(callerId)}&amp;leadName=${encodeURIComponent(leadName)}&amp;turnCount=${turnCount + 1}&amp;history=${encodeURIComponent(JSON.stringify(history))}">
                         <Say voice="Polly.Joanna" language="en-US">I am still on the line. Can you hear me all right, or would you like me to connect you with a member of our team?</Say>
                     </Gather>
                 </Response>
@@ -239,7 +243,7 @@ async function handleTurn(request: NextRequest): Promise<NextResponse> {
 
         // 7. Otherwise speak and gather next speech
         const nextTurn = turnCount + 1;
-        const nextActionUrl = `${appUrl}/api/twilio/ai-call/turn?agentUserId=${encodeURIComponent(agentUserId)}&amp;callerId=${encodeURIComponent(callerId)}&amp;leadName=${encodeURIComponent(leadName)}&amp;turnCount=${nextTurn}&amp;history=${encodeURIComponent(JSON.stringify(history))}`;
+        const nextActionUrl = `${appUrl}/api/signalwire/ai-call/turn?agentUserId=${encodeURIComponent(agentUserId)}&amp;callerId=${encodeURIComponent(callerId)}&amp;leadName=${encodeURIComponent(leadName)}&amp;turnCount=${nextTurn}&amp;history=${encodeURIComponent(JSON.stringify(history))}`;
 
         return twimlResponse(`
             <Response>
@@ -250,13 +254,13 @@ async function handleTurn(request: NextRequest): Promise<NextResponse> {
         `);
     } catch (error) {
         console.error('[AI Turn] Fatal error in turn handler:', error);
-        const callerId = process.env.TWILIO_DEFAULT_NUMBER || '+13072076444';
+        // No generic softphone identity to fall back to here (each user's SIP
+        // username is a per-account hash, and agentUserId from the try block isn't
+        // in scope) — apologize and hang up rather than dialing an unknown target.
         return twimlResponse(`
             <Response>
-                <Say voice="Polly.Joanna" language="en-US">Please hold while I connect you with a member of our team.</Say>
-                <Dial answerOnBridge="true" callerId="${callerId}">
-                    <Client>user</Client>
-                </Dial>
+                <Say voice="Polly.Joanna" language="en-US">Sorry, something went wrong. Please call back and we'll be right with you.</Say>
+                <Hangup/>
             </Response>
         `);
     }

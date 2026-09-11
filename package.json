@@ -1,5 +1,5 @@
 {
-  "name": "twilio-phone",
+  "name": "netro-scale-dialer",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -8,13 +8,13 @@
     "start": "node --max-http-header-size=65536 node_modules/next/dist/bin/next start"
   },
   "dependencies": {
+    "@signalwire/compatibility-api": "^3.2.0",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.94.0",
-    "@twilio/voice-sdk": "^2.18.0",
+    "jssip": "^3.13.8",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "twilio": "^5.12.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

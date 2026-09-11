@@ -1,4 +1,4 @@
-// Transcribes a completed Twilio call recording or voicemail. Deepgram is tried
+// Transcribes a completed SignalWire call recording or voicemail. Deepgram is tried
 // first when configured (fast, real free-trial credit, no infrastructure); a
 // self-hosted Whisper-compatible endpoint is the fallback when Deepgram is
 // unconfigured or fails — same "try the good option, degrade gracefully" pattern
@@ -16,28 +16,20 @@
 // If neither is set, transcribeRecording() returns null and callers must treat
 // that as "no transcript available," not an error.
 
+import { signalWireBasicAuth } from '@/lib/signalwire/config';
+
 export interface TranscriptionResult {
     text: string;
     provider: 'deepgram' | 'whisper';
 }
 
-async function downloadTwilioRecording(recordingUrl: string): Promise<Buffer | null> {
-    const accountSid = process.env.TWILIO_ACCOUNT_SID;
-    const apiKey = process.env.TWILIO_API_KEY;
-    const apiSecret = process.env.TWILIO_API_SECRET;
-
-    if (!accountSid || !apiKey || !apiSecret) {
-        console.error('[Transcribe] Twilio credentials not configured, cannot download recording');
-        return null;
-    }
-
-    // Recording URLs from Twilio callbacks have no extension; .mp3 guarantees a
+async function downloadSignalWireRecording(recordingUrl: string): Promise<Buffer | null> {
+    // Recording URLs from SignalWire callbacks have no extension; .mp3 guarantees a
     // playable audio stream back instead of a metadata JSON response.
     const url = recordingUrl.endsWith('.mp3') ? recordingUrl : `${recordingUrl}.mp3`;
-    const basicAuth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
 
     try {
-        const res = await fetch(url, { headers: { Authorization: `Basic ${basicAuth}` } });
+        const res = await fetch(url, { headers: { Authorization: `Basic ${signalWireBasicAuth()}` } });
         if (!res.ok) {
             console.error(`[Transcribe] Failed to download recording: HTTP ${res.status}`);
             return null;
@@ -114,7 +106,7 @@ async function transcribeWithWhisper(audio: Buffer, endpointUrl: string): Promis
 }
 
 export async function transcribeRecording(recordingUrl: string, customDeepgramKey?: string): Promise<TranscriptionResult | null> {
-    const audio = await downloadTwilioRecording(recordingUrl);
+    const audio = await downloadSignalWireRecording(recordingUrl);
     if (!audio) return null;
 
     const deepgramKey = customDeepgramKey || process.env.DEEPGRAM_API_KEY;

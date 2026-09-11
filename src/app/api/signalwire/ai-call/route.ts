@@ -13,7 +13,7 @@ function escapeXml(unsafe: string): string {
 }
 
 function twimlResponse(twiml: string): NextResponse {
-    console.log(`[Twilio AI Entry Response]\n${twiml}`);
+    console.log(`[SignalWire AI Entry Response]\n${twiml}`);
     return new NextResponse(twiml, {
         headers: { 'Content-Type': 'text/xml' },
     });
@@ -68,14 +68,11 @@ async function handleEntry(request: NextRequest): Promise<NextResponse> {
         const answeredBy = (params['AnsweredBy'] || '').toLowerCase();
         console.log('[AI Entry] Initiating AI call with params:', JSON.stringify(params));
 
-        const from = params['From'] || '';
-        const agentUserId = from.startsWith('client:')
-            ? from.replace('client:', '')
-            : (params['agentUserId'] || params['userId'] || 'user');
-        const callerId = params['callerId'] || process.env.TWILIO_DEFAULT_NUMBER || '+13072076444';
+        const agentUserId = params['agentUserId'] || params['userId'] || 'user';
+        const callerId = params['callerId'] || process.env.SIGNALWIRE_DEFAULT_NUMBER || '+13072076444';
         const leadName = params['leadName'] || '';
 
-        // If Twilio AMD already signaled voicemail on connect
+        // If SignalWire's AMD already signaled voicemail on connect
         if (answeredBy.startsWith('machine') || answeredBy === 'fax') {
             if (callSid) {
                 updateCall(callSid, { status: 'voicemail', currentStage: 'voicemail', answeredBy: answeredBy as any });
@@ -132,7 +129,7 @@ async function handleEntry(request: NextRequest): Promise<NextResponse> {
             }, 'greeting');
         }
 
-        const turnActionUrl = `${appUrl}/api/twilio/ai-call/turn?agentUserId=${encodeURIComponent(agentUserId)}&amp;callerId=${encodeURIComponent(callerId)}&amp;leadName=${encodeURIComponent(leadName)}&amp;turnCount=1`;
+        const turnActionUrl = `${appUrl}/api/signalwire/ai-call/turn?agentUserId=${encodeURIComponent(agentUserId)}&amp;callerId=${encodeURIComponent(callerId)}&amp;leadName=${encodeURIComponent(leadName)}&amp;turnCount=1`;
 
         return twimlResponse(`
             <Response>
@@ -143,12 +140,14 @@ async function handleEntry(request: NextRequest): Promise<NextResponse> {
         `);
     } catch (error) {
         console.error('[AI Entry] Error initializing AI call:', error);
+        // No generic softphone identity to fall back to here (each user's SIP
+        // username is a per-account hash, not a fixed "user" address the way a
+        // Twilio Client identity of 'user' used to be) — apologize and hang up
+        // rather than dialing a target that can't resolve to anyone.
         return twimlResponse(`
             <Response>
-                <Say voice="Polly.Joanna" language="en-US">Connecting your call.</Say>
-                <Dial answerOnBridge="true">
-                    <Client>user</Client>
-                </Dial>
+                <Say voice="Polly.Joanna" language="en-US">Sorry, something went wrong connecting your call. Please try again.</Say>
+                <Hangup/>
             </Response>
         `);
     }

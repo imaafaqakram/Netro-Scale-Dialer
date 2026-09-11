@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { useTwilio } from '@/contexts/TwilioContext';
+import { useSignalWire } from '@/contexts/SignalWireContext';
 import styles from './GlobalDialerFAB.module.css';
 
 export function GlobalDialerFAB() {
@@ -14,7 +14,7 @@ export function GlobalDialerFAB() {
         '+1 (800) 444-4444'
     ]);
 
-    const twilio = useTwilio();
+    const signalwire = useSignalWire();
     const popupRef = useRef<HTMLDivElement>(null);
     const fabRef = useRef<HTMLButtonElement>(null);
 
@@ -28,14 +28,14 @@ export function GlobalDialerFAB() {
                 !fabRef.current.contains(event.target as Node)
             ) {
                 // If on call, keep it open or minimized
-                if (twilio.callStatus !== 'connected' && twilio.callStatus !== 'ringing') {
+                if (signalwire.callStatus !== 'connected' && signalwire.callStatus !== 'ringing') {
                     setIsOpen(false);
                 }
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [twilio.callStatus]);
+    }, [signalwire.callStatus]);
 
     const playDTMF = (digit: string) => {
         try {
@@ -53,8 +53,8 @@ export function GlobalDialerFAB() {
 
     const handleDigitPress = (digit: string) => {
         playDTMF(digit);
-        if (twilio.callStatus === 'connected') {
-            twilio.sendDTMF(digit);
+        if (signalwire.callStatus === 'connected') {
+            signalwire.sendDTMF(digit);
         } else {
             setPhoneNumber(prev => prev + digit);
         }
@@ -72,14 +72,14 @@ export function GlobalDialerFAB() {
             setRecentCalls(prev => [target, ...prev.slice(0, 4)]);
         }
 
-        // twilio.makeCall() already registers the call with the active-call state layer
+        // signalwire.makeCall() already registers the call with the active-call state layer
         // synchronously as soon as it's created — calling setActiveCall again here would
         // double-attach listeners to the same Call object.
-        await twilio.makeCall(target);
+        await signalwire.makeCall(target);
     };
 
-    const isOnCall = twilio.callStatus === 'connected' || twilio.callStatus === 'connecting' || twilio.callStatus === 'ringing';
-    const isReady = twilio.deviceStatus === 'ready';
+    const isOnCall = signalwire.callStatus === 'connected' || signalwire.callStatus === 'connecting' || signalwire.callStatus === 'ringing';
+    const isReady = signalwire.deviceStatus === 'ready';
 
     const formatDuration = (seconds: number): string => {
         const mins = Math.floor(seconds / 60);
@@ -114,7 +114,7 @@ export function GlobalDialerFAB() {
                             <div>
                                 <h4 className={styles.headerTitle}>Netro Scale Softphone</h4>
                                 <span className={styles.headerStatus}>
-                                    {isOnCall ? `Active Call • ${formatDuration(twilio.duration)}` : isReady ? 'Line 1 • Ready' : 'Connecting...'}
+                                    {isOnCall ? `Active Call • ${formatDuration(signalwire.duration)}` : isReady ? 'Line 1 • Ready' : 'Connecting...'}
                                 </span>
                             </div>
                         </div>
@@ -137,24 +137,24 @@ export function GlobalDialerFAB() {
                                 <PhoneIcon />
                             </div>
                             <div className={styles.callRemoteNumber}>
-                                {twilio.remoteNumber || phoneNumber || 'Unknown Caller'}
+                                {signalwire.remoteNumber || phoneNumber || 'Unknown Caller'}
                             </div>
                             <div className={styles.callStatusText}>
-                                {twilio.callStatus === 'ringing' ? 'Ringing...' : twilio.callStatus === 'connecting' ? 'Connecting...' : 'Call in progress'}
+                                {signalwire.callStatus === 'ringing' ? 'Ringing...' : signalwire.callStatus === 'connecting' ? 'Connecting...' : 'Call in progress'}
                             </div>
                             <div className={styles.callTimer}>
-                                {formatDuration(twilio.duration)}
+                                {formatDuration(signalwire.duration)}
                             </div>
 
                             {/* Active Call Controls */}
                             <div className={styles.callControlsGrid}>
                                 <button
-                                    className={`${styles.controlBtn} ${twilio.isMuted ? styles.controlBtnActive : ''}`}
-                                    onClick={twilio.toggleMute}
-                                    title={twilio.isMuted ? 'Unmute' : 'Mute'}
+                                    className={`${styles.controlBtn} ${signalwire.isMuted ? styles.controlBtnActive : ''}`}
+                                    onClick={signalwire.toggleMute}
+                                    title={signalwire.isMuted ? 'Unmute' : 'Mute'}
                                 >
                                     <MicIcon />
-                                    <span>{twilio.isMuted ? 'Unmute' : 'Mute'}</span>
+                                    <span>{signalwire.isMuted ? 'Unmute' : 'Mute'}</span>
                                 </button>
                                 <button
                                     className={styles.controlBtn}
@@ -186,7 +186,7 @@ export function GlobalDialerFAB() {
                             {/* End Call Button */}
                             <button
                                 className={styles.hangupBtn}
-                                onClick={twilio.hangup}
+                                onClick={signalwire.hangup}
                             >
                                 <HangupIcon />
                                 <span>End Call</span>

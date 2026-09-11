@@ -3,10 +3,10 @@ import { createServerClient } from '@supabase/ssr'
 import { syncCallToCrm } from '@/lib/crm/callSync'
 
 // Transcription (Deepgram/Whisper) can take a while on longer calls; give this route
-// more headroom than the Next.js/Vercel default before Twilio's own retry kicks in.
+// more headroom than the Next.js/Vercel default before SignalWire's own retry kicks in.
 export const maxDuration = 60
 
-// Twilio calls this when a call recording is completed.
+// SignalWire calls this when a call recording is completed.
 // We save the recording metadata to Supabase.
 
 function createSupabaseAdmin() {

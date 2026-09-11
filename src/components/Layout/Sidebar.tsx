@@ -137,7 +137,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                         <span className={styles.lineTitle}>Active Caller ID</span>
                     </div>
                     <div className={styles.lineNumber}>
-                        {defaultNumber || 'Twilio Default Line'}
+                        {defaultNumber || 'Default Line'}
                     </div>
                 </div>
             </div>

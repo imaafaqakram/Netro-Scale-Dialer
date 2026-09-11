@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
 
         console.log(`[Voicemail Webhook] userId: ${userId}, dialStatus: ${dialCallStatus}, action: ${isSaveAction ? 'save' : 'prompt'}, url: ${recordingUrl}`)
 
-        // Scenario 2: Twilio is calling us back after recording was completed
+        // Scenario 2: SignalWire is calling us back after recording was completed
         if (isSaveAction && recordingUrl) {
             return await saveVoicemail({
                 userId,
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
             ? `<Play>${greetingUrl}</Play>`
             : `<Say voice="Polly.Joanna">The person you are calling is unavailable. Please leave a message after the beep.</Say>`
 
-        const recordActionUrl = `${appUrl}/api/twilio/voicemail?user_id=${encodeURIComponent(userId)}&amp;from=${encodeURIComponent(callerNumber)}&amp;action=save`
+        const recordActionUrl = `${appUrl}/api/signalwire/voicemail?user_id=${encodeURIComponent(userId)}&amp;from=${encodeURIComponent(callerNumber)}&amp;action=save`
 
         return twimlResponse(`
             <Response>

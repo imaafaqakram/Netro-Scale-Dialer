@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import twilio from 'twilio'
+import { getSignalWireClient } from '@/lib/signalwire/restClient'
+import { getSignalWireConfig } from '@/lib/signalwire/config'
 
 async function createSupabaseServer() {
     const cookieStore = await cookies()
@@ -34,8 +35,8 @@ export async function GET(request: NextRequest) {
         const url = new URL(request.url)
         const type = url.searchParams.get('type') // 'call' | 'voicemail' | null (all)
 
-        // Always sync latest recordings from Twilio to guarantee no recordings are missed
-        await syncTwilioRecordings(supabase, user.id)
+        // Always sync latest recordings from SignalWire to guarantee no recordings are missed
+        await syncSignalWireRecordings(supabase, user.id)
 
         let query = supabase
             .from('call_recordings')
@@ -70,21 +71,12 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * Sync call recordings from Twilio REST API into Supabase.
+ * Sync call recordings from SignalWire's REST API into Supabase.
  * This catches recordings that the recordingStatusCallback may have missed.
  */
-async function syncTwilioRecordings(supabase: ReturnType<typeof createServerClient>, userId: string) {
+async function syncSignalWireRecordings(supabase: ReturnType<typeof createServerClient>, userId: string) {
     try {
-        const accountSid = process.env.TWILIO_ACCOUNT_SID
-        const apiKey = process.env.TWILIO_API_KEY
-        const apiSecret = process.env.TWILIO_API_SECRET
-
-        if (!accountSid || !apiKey || !apiSecret) {
-            console.warn('[Recordings Sync] Missing Twilio credentials')
-            return
-        }
-
-        const client = twilio(apiKey, apiSecret, { accountSid })
+        const client = getSignalWireClient()
 
         // Get user's phone numbers
         const { data: phoneNumbers } = await supabase
@@ -93,7 +85,7 @@ async function syncTwilioRecordings(supabase: ReturnType<typeof createServerClie
             .eq('user_id', userId)
 
         const userNumbers = (phoneNumbers || []).map((p: { phone_number: string }) => p.phone_number.replace(/\D/g, ''))
-        const defaultNum = (process.env.TWILIO_DEFAULT_NUMBER || '+13072076444').replace(/\D/g, '')
+        const defaultNum = (process.env.SIGNALWIRE_DEFAULT_NUMBER || '+13072076444').replace(/\D/g, '')
         userNumbers.push(defaultNum)
 
         // Get existing recording SIDs from DB to avoid duplicates
@@ -104,7 +96,7 @@ async function syncTwilioRecordings(supabase: ReturnType<typeof createServerClie
 
         const existingSids = new Set((existingRecordings || []).map((r: { recording_sid: string }) => r.recording_sid))
 
-        // Fetch recordings from Twilio (last 14 days)
+        // Fetch recordings from SignalWire (last 14 days)
         const fourteenDaysAgo = new Date()
         fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
 
@@ -147,13 +139,14 @@ async function syncTwilioRecordings(supabase: ReturnType<typeof createServerClie
 
                 const isVoicemail = rec.source === 'RecordVerb' || rec.channels === 1
                 const callerNumber = from || 'Unknown'
-                const userPhone = to || process.env.TWILIO_DEFAULT_NUMBER || '+13072076444'
+                const userPhone = to || process.env.SIGNALWIRE_DEFAULT_NUMBER || '+13072076444'
+                const { space, projectId } = getSignalWireConfig()
 
                 newRecordings.push({
                     user_id: userId,
                     phone_number: userPhone,
                     caller_number: callerNumber,
-                    recording_url: `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Recordings/${rec.sid}`,
+                    recording_url: `https://${space}/api/laml/2010-04-01/Accounts/${projectId}/Recordings/${rec.sid}`,
                     recording_sid: rec.sid,
                     call_sid: rec.callSid,
                     duration: rec.duration ? parseInt(String(rec.duration), 10) : 0,

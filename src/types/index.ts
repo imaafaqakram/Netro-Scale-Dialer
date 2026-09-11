@@ -12,7 +12,7 @@ export interface CallInfo {
 }
 
 // Call history types — mirrors call_history rows (see
-// supabase-migration-003-call-history.sql), written server-side from Twilio's own
+// supabase-migration-003-call-history.sql), written server-side from SignalWire's own
 // call status callbacks. 'missed' covers no-answer/busy/failed/canceled on an
 // incoming call; those same outcomes on an outgoing call keep their specific
 // status so "I called and it rang out" reads differently from "I called and the

@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-// Permanent, server-side call history. Rows are written by Twilio status
-// callbacks (src/app/api/twilio/call-status/route.ts and
-// src/app/api/twilio/ai-call/status/route.ts), never by the client — this route
+// Permanent, server-side call history. Rows are written by SignalWire status
+// callbacks (src/app/api/signalwire/call-status/route.ts and
+// src/app/api/signalwire/ai-call/status/route.ts), never by the client — this route
 // only reads/deletes. RLS (call_history policies in
 // supabase-migration-003-call-history.sql) scopes every query to the
 // authenticated user automatically.

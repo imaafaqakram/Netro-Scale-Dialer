@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { signalWireBasicAuth } from '@/lib/signalwire/config'
 
-// Proxy Twilio recording audio to the browser.
-// Twilio recordings require HTTP Basic Auth (Account SID + Auth Token).
+// Proxy SignalWire recording audio to the browser.
+// SignalWire recordings require HTTP Basic Auth (Project ID + API Token).
 
 export async function GET(request: NextRequest) {
     try {
@@ -36,43 +37,18 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'Recording URL required' }, { status: 400 })
         }
 
-        // Fetch from Twilio with Basic Auth
-        const accountSid = process.env.TWILIO_ACCOUNT_SID!
-        const apiKey = process.env.TWILIO_API_KEY!
-        const apiSecret = process.env.TWILIO_API_SECRET!
-        const authHeader = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
-
         // Ensure we request .mp3 format
         const audioUrl = recordingUrl.endsWith('.mp3') ? recordingUrl : `${recordingUrl}.mp3`
 
         const response = await fetch(audioUrl, {
             headers: {
-                'Authorization': `Basic ${authHeader}`,
+                'Authorization': `Basic ${signalWireBasicAuth()}`,
             },
         })
 
         if (!response.ok) {
-            // Fall back to Account SID auth
-            const fallbackAuth = Buffer.from(`${accountSid}:${apiSecret}`).toString('base64')
-            const fallbackResponse = await fetch(audioUrl, {
-                headers: {
-                    'Authorization': `Basic ${fallbackAuth}`,
-                },
-            })
-
-            if (!fallbackResponse.ok) {
-                console.error(`[Audio Proxy] Failed to fetch recording: ${fallbackResponse.status}`)
-                return NextResponse.json({ error: 'Failed to fetch recording' }, { status: 502 })
-            }
-
-            const audioData = await fallbackResponse.arrayBuffer()
-            return new NextResponse(audioData, {
-                headers: {
-                    'Content-Type': 'audio/mpeg',
-                    'Content-Length': audioData.byteLength.toString(),
-                    'Cache-Control': 'private, max-age=3600',
-                },
-            })
+            console.error(`[Audio Proxy] Failed to fetch recording: ${response.status}`)
+            return NextResponse.json({ error: 'Failed to fetch recording' }, { status: 502 })
         }
 
         const audioData = await response.arrayBuffer()

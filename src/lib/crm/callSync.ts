@@ -12,7 +12,7 @@ export interface SyncCallToCrmParams {
     leadEmail?: string | null;
     /** Already-known text transcript (e.g. AI-agent turn history) — skips audio transcription entirely. */
     transcript?: string | null;
-    /** Twilio recording URL to transcribe when no text transcript is already available. */
+    /** SignalWire recording URL to transcribe when no text transcript is already available. */
     recordingUrl?: string | null;
 }
 
@@ -21,7 +21,7 @@ export interface SyncCallToCrmParams {
 // AI-agent status webhook (which already has a text transcript from the turn history,
 // so it skips straight past audio transcription). Best-effort throughout: every step
 // degrades gracefully (missing config, failed transcription, etc.) rather than
-// throwing, since this must never be allowed to break the Twilio webhook response
+// throwing, since this must never be allowed to break the SignalWire webhook response
 // it's called from.
 export async function syncCallToCrm(params: SyncCallToCrmParams): Promise<void> {
     if (!params.userId || params.userId === 'user' || !params.phoneNumber) return;

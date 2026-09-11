@@ -7,7 +7,7 @@ import { CallHistoryList, RichDialer } from '@/components/Calls';
 import { AutoDialer } from '@/components/AutoDialer';
 import { AccessibilityPanel } from '@/components/AccessibilityPanel';
 import { AISimulatorModal } from '@/components/AISimulatorModal';
-import { useTwilio } from '@/contexts/TwilioContext';
+import { useSignalWire } from '@/contexts/SignalWireContext';
 import { useCallHistory } from '@/hooks/useCallHistory';
 import styles from './page.module.css';
 
@@ -37,10 +37,10 @@ function formatDuration(seconds?: number): string {
 }
 
 export default function Home() {
-    const twilio = useTwilio();
+    const signalwire = useSignalWire();
     const { history, setFilter, clearHistory, deleteEntry, refresh: refreshCallHistory } = useCallHistory();
 
-    // Call history is now written server-side, from Twilio's own status callbacks
+    // Call history is now written server-side, from SignalWire's own status callbacks
     // (see src/lib/callHistory.ts) — not by the client. This just nudges a refetch
     // shortly after a call ends so the list updates faster than the hook's own
     // background poll, giving the webhook round-trip time to land first.
@@ -126,12 +126,12 @@ export default function Home() {
         // If in AI Agent mode and calling a customer's phone number:
         if (callMode === 'ai_agent' && numberToCall !== '*99' && numberToCall !== '99') {
             try {
-                // Twilio identity is the user UUID used to register the softphone
-                const agentUserId = twilio.twilioIdentity
-                    || (typeof window !== 'undefined' ? localStorage.getItem('twilio_identity') : null)
+                // SIP identity is the user UUID used to register the softphone
+                const agentUserId = signalwire.sipIdentity
+                    || (typeof window !== 'undefined' ? localStorage.getItem('sip_identity') : null)
                     || 'user';
 
-                const res = await fetch('/api/twilio/ai-call/start', {
+                const res = await fetch('/api/signalwire/ai-call/start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -164,11 +164,11 @@ export default function Home() {
         // Direct call, Script call, or *99 Test Call via Softphone
         const effectiveMode = (numberToCall === '*99' || numberToCall === '99') ? 'test' : callMode;
 
-        // twilio.makeCall() registers the call with the active-call state layer itself,
+        // signalwire.makeCall() registers the call with the active-call state layer itself,
         // synchronously, the instant it's created — do not call setActiveCall again here,
         // that would double-attach listeners to the same Call object (duplicate/leaked
         // duration timers, and a stale setCallStatus('connecting') stomping real progress).
-        const call = await twilio.makeCall(numberToCall, selectedCallerId, {
+        const call = await signalwire.makeCall(numberToCall, selectedCallerId, {
             callMode: effectiveMode,
         });
         if (call) {
@@ -184,7 +184,7 @@ export default function Home() {
 
         const interval = setInterval(async () => {
             try {
-                const res = await fetch(`/api/twilio/ai-call/status?callSid=${encodeURIComponent(activeAiCall.callSid)}`);
+                const res = await fetch(`/api/signalwire/ai-call/status?callSid=${encodeURIComponent(activeAiCall.callSid)}`);
                 if (!res.ok) return;
                 const json = await res.json();
                 if (!json.success || !json.call) return;
@@ -230,7 +230,7 @@ export default function Home() {
                 } : null);
 
                 // Transitioned into a terminal status this tick — the AI-call status
-                // webhook (src/app/api/twilio/ai-call/status/route.ts) writes the
+                // webhook (src/app/api/signalwire/ai-call/status/route.ts) writes the
                 // durable call_history row around the same time; nudge a refetch.
                 const terminalStatuses = ['completed', 'voicemail', 'no-answer', 'busy', 'failed', 'canceled'];
                 if (!terminalStatuses.includes(activeAiCall.status) && terminalStatuses.includes(newStatus)) {
@@ -247,7 +247,7 @@ export default function Home() {
     const handleCancelSingleAiCall = async () => {
         if (!activeAiCall?.callSid) return;
         try {
-            await fetch('/api/twilio/ai-call/cancel', {
+            await fetch('/api/signalwire/ai-call/cancel', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ callSid: activeAiCall.callSid }),
@@ -256,49 +256,49 @@ export default function Home() {
         } catch {}
     };
 
-    // Incoming call disconnected/canceled before being answered: Twilio's own
-    // <Client> statusCallback (src/app/api/twilio/webhook/route.ts) will record this
+    // Incoming call disconnected/canceled before being answered: SignalWire's own
+    // <Sip> statusCallback (src/app/api/signalwire/webhook/route.ts) will record this
     // as a 'missed' call_history row once its no-answer/canceled callback lands —
     // just nudge a refetch so the list catches up promptly.
     useEffect(() => {
-        if (!twilio.incomingCall) return;
+        if (!signalwire.incomingCall) return;
 
         const handleDisconnect = () => {
-            if (!twilio.activeCall) scheduleHistoryRefresh();
+            if (!signalwire.activeCall) scheduleHistoryRefresh();
         };
 
-        twilio.incomingCall.on('disconnect', handleDisconnect);
-        twilio.incomingCall.on('cancel', handleDisconnect);
+        signalwire.incomingCall.on('disconnect', handleDisconnect);
+        signalwire.incomingCall.on('cancel', handleDisconnect);
 
         return () => {
-            twilio.incomingCall?.off('disconnect', handleDisconnect);
-            twilio.incomingCall?.off('cancel', handleDisconnect);
+            signalwire.incomingCall?.off('disconnect', handleDisconnect);
+            signalwire.incomingCall?.off('cancel', handleDisconnect);
         };
-    }, [twilio.incomingCall, twilio.activeCall, scheduleHistoryRefresh]);
+    }, [signalwire.incomingCall, signalwire.activeCall, scheduleHistoryRefresh]);
 
     // Active call ended: same deal — the per-leg statusCallback already recorded the
     // authoritative outcome/duration server-side, this just nudges a refetch.
     useEffect(() => {
-        if (!twilio.activeCall) return;
+        if (!signalwire.activeCall) return;
 
         const handleRemoteDisconnect = () => {
             scheduleHistoryRefresh();
         };
 
-        twilio.activeCall.on('disconnect', handleRemoteDisconnect);
+        signalwire.activeCall.on('disconnect', handleRemoteDisconnect);
 
         return () => {
-            twilio.activeCall?.off('disconnect', handleRemoteDisconnect);
+            signalwire.activeCall?.off('disconnect', handleRemoteDisconnect);
         };
-    }, [twilio.activeCall, scheduleHistoryRefresh]);
+    }, [signalwire.activeCall, scheduleHistoryRefresh]);
 
     return (
         <AppLayout
             onAccessibilityClick={() => setShowAccessibility(true)}
             callFilter={callFilter}
             onCallFilterChange={handleFilterChange}
-            deviceStatus={twilio.deviceStatus}
-            error={twilio.deviceError}
+            deviceStatus={signalwire.deviceStatus}
+            error={signalwire.deviceError}
             user={user || undefined}
         >
             {/* Accessibility Modal */}
@@ -317,7 +317,7 @@ export default function Home() {
                         <div className={styles.statInfo}>
                             <span className={styles.statLabel}>Outbound Caller ID</span>
                             <span className={styles.statValueSmall}>
-                                {selectedCallerId || (assignedNumbers[0]?.phone_number) || 'Default Twilio Number'}
+                                {selectedCallerId || (assignedNumbers[0]?.phone_number) || 'Default Number'}
                             </span>
                         </div>
                     </div>
@@ -494,7 +494,7 @@ export default function Home() {
                                         phoneNumber={phoneNumber}
                                         onPhoneNumberChange={setPhoneNumber}
                                         onCall={() => handleCall()}
-                                        isReady={twilio.deviceStatus === 'ready'}
+                                        isReady={signalwire.deviceStatus === 'ready'}
                                     />
                                 </div>
                             )}

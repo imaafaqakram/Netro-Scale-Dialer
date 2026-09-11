@@ -435,7 +435,7 @@ export default function SettingsPage() {
                         <div className={styles.card}>
                             <div className={styles.about}>
                                 <p><strong>Netro Scale v2.0</strong></p>
-                                <p className={styles.aboutDesc}>AI voice agent &amp; telephony system powered by Twilio, Replicate, Cerebras, and Deepgram</p>
+                                <p className={styles.aboutDesc}>AI voice agent &amp; telephony system powered by SignalWire, Replicate, Cerebras, and Deepgram</p>
                             </div>
                         </div>
                     </section>

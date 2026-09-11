@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-// Canonical call outcome recorded in call_history. Twilio's own CallStatus values
-// map onto this fairly directly — see src/app/api/twilio/call-status/route.ts and
-// src/app/api/twilio/ai-call/status/route.ts for the mapping.
+// Canonical call outcome recorded in call_history. SignalWire's own CallStatus values
+// map onto this fairly directly — see src/app/api/signalwire/call-status/route.ts and
+// src/app/api/signalwire/ai-call/status/route.ts for the mapping.
 export type CallHistoryStatus =
     | 'in-progress'
     | 'completed'
@@ -24,9 +24,9 @@ export interface UpsertCallHistoryParams {
     duration?: number;
 }
 
-// Single write path for call_history, called from every Twilio status callback
-// (direct/script calls via /api/twilio/call-status, AI-agent calls via
-// /api/twilio/ai-call/status). Twilio calls back multiple times per call
+// Single write path for call_history, called from every SignalWire status callback
+// (direct/script calls via /api/signalwire/call-status, AI-agent calls via
+// /api/signalwire/ai-call/status). SignalWire calls back multiple times per call
 // (initiated -> ringing -> answered -> completed); this upserts by call_sid so
 // the row is created once and then progressively updated to its final state,
 // never duplicated.

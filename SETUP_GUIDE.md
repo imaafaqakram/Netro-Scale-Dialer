@@ -1,6 +1,6 @@
 # Netro Scale - Setup Guide
 
-Browser-based calling app built with Next.js 16, Twilio Voice SDK, and Supabase.
+Browser-based calling app built with Next.js 16, SignalWire (SIP over WebSocket), and Supabase.
 
 ---
 
@@ -8,47 +8,41 @@ Browser-based calling app built with Next.js 16, Twilio Voice SDK, and Supabase.
 
 - **Node.js** v18+
 - **ngrok** ([ngrok.com](https://ngrok.com)) — for local development
-- **Twilio account** ([twilio.com](https://www.twilio.com))
+- **SignalWire account** ([signalwire.com](https://signalwire.com))
 - **Supabase project** ([supabase.com](https://supabase.com))
 
 ---
 
-## Step 1: Twilio Setup
+## Step 1: SignalWire Setup
 
 ### 1.1 Get Credentials
 
-From the [Twilio Console](https://console.twilio.com):
+From your [SignalWire Dashboard](https://signalwire.com) (**Settings → API**):
 
 | Credential | Where to find | Format |
 |---|---|---|
-| Account SID | Dashboard | `ACxxxxxxxx` |
-| API Key | Account → API Keys → Create Standard | `SKxxxxxxxx` |
-| API Secret | Shown once when creating API Key | Save immediately! |
+| Space name | The subdomain in your dashboard URL — `yourspace` in `yourspace.signalwire.com` | `yourspace.signalwire.com` |
+| Project ID | Settings → API | UUID |
+| API Token | Settings → API → Create new token | `PTxxxxxxxx` |
 
 ### 1.2 Buy a Phone Number
 
 1. Go to **Phone Numbers → Buy a Number**
 2. Select one with **Voice** capability
-3. Note the number (e.g., `+13072075599`)
+3. Note the number (e.g., `+19414315039`)
 
-### 1.3 Create a TwiML App
+### 1.3 Set the Phone Number's Voice URL
 
-1. Go to **Voice → TwiML Apps → Create**
-2. Name: `Netro Scale`
-3. **Voice Request URL**: `https://YOUR-NGROK-URL/api/twilio/webhook`
-4. Method: **POST**
-5. Save and copy the **SID** (starts with `AP`)
+1. Go to **Phone Numbers → Your Number**
+2. Set **Accepts incoming calls as**: Voice
+3. **When a call comes in**: `https://YOUR-DEPLOYMENT-URL/api/signalwire/webhook`, Method **POST**
+4. Save
 
-### 1.4 Configure Phone Number Webhook
+### 1.4 Browser softphone (SIP) credentials
 
-1. Go to **Phone Numbers → Active Numbers → Your Number**
-2. Under **Voice Configuration**:
-   - **A call comes in**: Webhook
-   - **URL**: `https://YOUR-NGROK-URL/api/twilio/webhook`
-   - **Method**: POST
-3. Save
+Unlike Twilio's short-lived JWT model, this app provisions a dedicated SIP username/password for each user automatically on first login (see `src/lib/signalwire/sipCredentials.ts`) — nothing to configure by hand here. The SIP endpoint's `call_request_url` is set to the same `/api/signalwire/webhook` URL, so it needs your deployment's public URL to be reachable — set `NEXT_PUBLIC_APP_URL` (Step 4) before users first log in.
 
-> **Note:** Both the TwiML App and Phone Number webhook point to the same URL: `/api/twilio/webhook`
+> **Note:** Both the phone number's Voice URL and each user's SIP endpoint point at the same route: `/api/signalwire/webhook` — it tells inbound PSTN calls and outbound browser-originated calls apart by whether `From` looks like a SIP URI.
 
 ---
 
@@ -137,7 +131,7 @@ first `org_admin`, invited by email); from Admin, an `org_admin` invites
 **Known limitation:** an organization's `suspended` flag (toggle in Super
 Admin) is currently a record-keeping flag only — it does not yet block that
 organization's users from logging in or making calls. Enforcing it is a
-follow-up, not yet wired into `middleware.ts` or the Twilio webhooks.
+follow-up, not yet wired into `middleware.ts` or the SignalWire webhooks.
 
 ---
 
@@ -208,12 +202,17 @@ NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
-# Twilio
-TWILIO_ACCOUNT_SID=ACxxxxxxxx
-TWILIO_API_KEY=SKxxxxxxxx
-TWILIO_API_SECRET=your-secret
-TWILIO_TWIML_APP_SID=APxxxxxxxx
-TWILIO_DEFAULT_NUMBER=+1XXXXXXXXXX
+# SignalWire
+SIGNALWIRE_SPACE=yourspace.signalwire.com
+SIGNALWIRE_PROJECT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+SIGNALWIRE_API_TOKEN=PTxxxxxxxx
+SIGNALWIRE_DEFAULT_NUMBER=+1XXXXXXXXXX
+SIGNALWIRE_SIP_DOMAIN=yourspace.sip.signalwire.com
+
+# Required so the server can build absolute webhook URLs (SIP endpoint
+# call_request_url, phone number Voice URL callbacks) — your deployment's own
+# public URL, e.g. https://netro-dialer.vercel.app
+NEXT_PUBLIC_APP_URL=https://your-deployment-url
 
 # Google Sheets CRM (optional — see Step 3)
 GOOGLE_SERVICE_ACCOUNT_KEY={"type":"service_account","client_email":"...","private_key":"...", ...}
@@ -225,26 +224,16 @@ WHISPER_ENDPOINT_URL=https://your-whisper-server.example.com
 
 ---
 
-## Step 5: Run Locally
+## Step 5: Run
 
-### Terminal 1: Start ngrok
+This app is deployed on Vercel, which builds and serves it on a stable public
+HTTPS URL automatically on every push to `main` — no ngrok/tunnel needed the
+way local development required. Set `NEXT_PUBLIC_APP_URL` (Step 4) to that
+deployment URL, push, then open the app, log in, and verify **"Ready"** status.
 
-```bash
-ngrok http 3000
-```
-
-Copy the HTTPS URL (e.g., `https://xxxx.ngrok-free.dev`) and update:
-- TwiML App Voice Request URL
-- Phone Number Voice Webhook URL
-
-### Terminal 2: Start the app
-
-```bash
-npm install
-npm run dev
-```
-
-Open http://localhost:3000, log in, and verify **"Ready"** status.
+To run locally instead, start ngrok (`ngrok http 3000`), set
+`NEXT_PUBLIC_APP_URL` to the ngrok HTTPS URL, update the phone number's Voice
+URL to match, then `npm install && npm run dev`.
 
 ---
 
@@ -254,7 +243,7 @@ Open http://localhost:3000, log in, and verify **"Ready"** status.
 src/
 ├── app/
 │   ├── api/
-│   │   ├── twilio/
+│   │   ├── signalwire/
 │   │   │   ├── token/        # JWT token generation
 │   │   │   ├── webhook/      # Incoming & outgoing call handling
 │   │   │   └── voicemail/    # Voicemail recording & playback
@@ -265,16 +254,16 @@ src/
 │   ├── login/                # Auth page
 │   └── settings/             # User settings
 ├── components/               # UI components
-├── hooks/                    # Twilio device, call state
+├── hooks/                    # SignalWire device, call state
 ├── lib/                      # Config, API client, Supabase
 └── middleware.ts             # Auth protection
 ```
 
 ### Call Flow
 
-**Outgoing:** Browser → Twilio SDK → Twilio Cloud → `/api/twilio/webhook` → TwiML → Connects call
+**Outgoing:** Browser → JsSIP → SignalWire Cloud → `/api/signalwire/webhook` → LaML → Connects call
 
-**Incoming:** Phone call → Twilio → `/api/twilio/webhook` → Looks up user by number → Routes to browser client
+**Incoming:** Phone call → SignalWire → `/api/signalwire/webhook` → Looks up user by number → Routes to browser client
 
 ---
 
@@ -297,10 +286,10 @@ src/
 
 | Issue | Fix |
 |---|---|
-| Status never becomes "Ready" | Check Twilio env vars in `.env.local` |
+| Status never becomes "Ready" | Check SignalWire env vars in `.env.local` |
 | Calls redirect to /login | Middleware bypass not working — check `middleware.ts` |
 | "Document parse failure" errors | Check for unescaped `&` in TwiML XML |
-| Incoming calls don't ring | Verify phone number webhook points to `/api/twilio/webhook` |
+| Incoming calls don't ring | Verify phone number Voice URL points to `/api/signalwire/webhook` |
 | Voicemail not saving | Run `supabase-migration.sql` and check `SUPABASE_SERVICE_ROLE_KEY` |
 | ngrok URL changed | Update TwiML App + Phone Number webhook URLs |
 
@@ -310,5 +299,5 @@ src/
 
 1. Connect repo to Vercel
 2. Add all env vars from `.env.example`
-3. Deploy — webhook URLs will be `https://your-app.vercel.app/api/twilio/webhook`
+3. Deploy — webhook URLs will be `https://your-app.vercel.app/api/signalwire/webhook`
 4. Update TwiML App and Phone Number webhooks to the Vercel URL

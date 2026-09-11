@@ -3,9 +3,9 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { CallHistoryEntry, CallHistoryFilter } from '@/types';
 
-// Server-backed call history. Every entry is written by Twilio's own call status
-// callbacks (src/app/api/twilio/call-status/route.ts,
-// src/app/api/twilio/ai-call/status/route.ts) via /api/user/call-history — this
+// Server-backed call history. Every entry is written by SignalWire's own call status
+// callbacks (src/app/api/signalwire/call-status/route.ts,
+// src/app/api/signalwire/ai-call/status/route.ts) via /api/user/call-history — this
 // hook only reads and deletes. Nothing here caps or expires entries; a row exists
 // until the user explicitly deletes it.
 const POLL_INTERVAL_MS = 10000;

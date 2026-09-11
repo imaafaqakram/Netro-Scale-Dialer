@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseAdmin } from '@/lib/supabase/admin';
 import { upsertCallHistory, CallHistoryStatus } from '@/lib/callHistory';
 
-// Per-leg status callback attached to the <Number>/<Client> nouns in
-// src/app/api/twilio/webhook/route.ts. Twilio calls this multiple times over the
+// Per-leg status callback attached to the <Number>/<Sip> nouns in
+// src/app/api/signalwire/webhook/route.ts. SignalWire calls this multiple times over the
 // life of a direct/script-mode call (initiated -> ringing -> answered ->
 // completed) with that leg's authoritative CallSid/CallStatus/CallDuration —
 // this is the source of truth for call_history, not client-side SDK events
@@ -29,7 +29,7 @@ async function extractParams(request: NextRequest): Promise<Record<string, strin
     return params;
 }
 
-// Maps Twilio's CallStatus to our canonical status. For an incoming call that
+// Maps SignalWire's CallStatus to our canonical status. For an incoming call that
 // never reached the softphone, "no-answer"/"busy"/"failed"/"canceled" all read
 // to the end user as one thing: a missed call.
 function mapStatus(callStatus: string, direction: 'incoming' | 'outgoing'): CallHistoryStatus | null {

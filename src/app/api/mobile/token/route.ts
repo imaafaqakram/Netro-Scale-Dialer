@@ -1,12 +1,10 @@
 import { NextResponse } from 'next/server'
-import twilio from 'twilio'
 import { getUserFromBearer } from '@/lib/apiMobileAuth'
+import { getOrCreateSipCredential } from '@/lib/signalwire/sipCredentials'
+import { getSignalWireConfig } from '@/lib/signalwire/config'
 
-const AccessToken = twilio.jwt.AccessToken
-const VoiceGrant = AccessToken.VoiceGrant
-
-// Mobile variant of /api/twilio/token. Authenticates with a Supabase Bearer
-// token instead of cookies, then mints the same Twilio Voice access token.
+// Mobile variant of /api/signalwire/sip-credentials. Authenticates with a
+// Supabase Bearer token instead of cookies, then mints the same SIP credential.
 export async function POST(request: Request) {
     try {
         const auth = await getUserFromBearer(request)
@@ -14,36 +12,17 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: auth.message || 'Unauthorized' }, { status: auth.status })
         }
 
-        const accountSid = process.env.TWILIO_ACCOUNT_SID
-        const apiKey = process.env.TWILIO_API_KEY
-        const apiSecret = process.env.TWILIO_API_SECRET
-        const twimlAppSid = process.env.TWILIO_TWIML_APP_SID
-
-        if (!accountSid || !apiKey || !apiSecret || !twimlAppSid) {
-            console.error('Missing Twilio environment variables')
-            return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
-        }
-
         // Same identity scheme as the web client: the Supabase user UUID.
-        // Incoming calls route to this identity via <Client>{userId}</Client>.
-        const identity = auth.user.id
-
-        const token = new AccessToken(accountSid, apiKey, apiSecret, {
-            identity,
-            ttl: 3600,
-        })
-
-        token.addGrant(
-            new VoiceGrant({
-                outgoingApplicationSid: twimlAppSid,
-                incomingAllow: true,
-            })
-        )
+        // Incoming calls route to this identity via <Sip>sip:{username}@domain</Sip>.
+        const { username, password } = await getOrCreateSipCredential(auth.user.id)
+        const { sipDomain } = getSignalWireConfig()
 
         return NextResponse.json({
-            token: token.toJwt(),
-            identity,
-            expiresIn: 3600,
+            username,
+            password,
+            domain: sipDomain,
+            wsUri: `wss://${sipDomain}`,
+            identity: auth.user.id,
         })
     } catch (error) {
         console.error('[Mobile Token] Error:', error)

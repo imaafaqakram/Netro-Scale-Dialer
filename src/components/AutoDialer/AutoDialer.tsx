@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import * as XLSX from 'xlsx';
-import { useTwilio } from '@/contexts/TwilioContext';
+import { useSignalWire } from '@/contexts/SignalWireContext';
 import styles from './AutoDialer.module.css';
 
 type DialStatus = 'pending' | 'queued' | 'dialing' | 'connected' | 'voicemail' | 'transferring' | 'completed' | 'no-answer' | 'busy' | 'failed' | 'cancelled' | 'skipped';
@@ -62,7 +62,7 @@ function formatDuration(seconds?: number): string {
 }
 
 export function AutoDialer() {
-    const twilio = useTwilio();
+    const signalwire = useSignalWire();
     const [entries, setEntries] = useState<DialEntry[]>([]);
     const [runState, setRunState] = useState<RunState>('idle');
     const [dialMode, setDialMode] = useState<AutoDialMode>('ai_agent');
@@ -73,19 +73,19 @@ export function AutoDialer() {
 
     const runStateRef = useRef<RunState>('idle');
     const entriesRef = useRef<DialEntry[]>([]);
-    const twilioRef = useRef(twilio);
+    const signalwireRef = useRef(signalwire);
     const activeCallsRef = useRef<Set<string>>(new Set()); // track entry IDs currently dialing/active
     const queueTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Track current softphone call status for direct mode
-    const prevCallStatusRef = useRef(twilio.callStatus);
+    const prevCallStatusRef = useRef(signalwire.callStatus);
     const directActiveEntryIdRef = useRef<string | null>(null);
 
     runStateRef.current = runState;
     entriesRef.current = entries;
-    twilioRef.current = twilio;
+    signalwireRef.current = signalwire;
 
     // ── Computed stats ─────────────────────────────────────────────────────────
     const stats: CampaignStats = {
@@ -204,11 +204,11 @@ export function AutoDialer() {
 
         if (dialMode === 'ai_agent') {
             try {
-                const agentUserId = twilioRef.current.twilioIdentity
-                    || (typeof window !== 'undefined' ? localStorage.getItem('twilio_identity') : null)
+                const agentUserId = signalwireRef.current.sipIdentity
+                    || (typeof window !== 'undefined' ? localStorage.getItem('sip_identity') : null)
                     || 'user';
 
-                const res = await fetch('/api/twilio/ai-call/start', {
+                const res = await fetch('/api/signalwire/ai-call/start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -248,10 +248,10 @@ export function AutoDialer() {
         } else {
             // Direct softphone mode
             directActiveEntryIdRef.current = entryId;
-            // twilioRef.current.makeCall() already registers the call with the active-call
+            // signalwireRef.current.makeCall() already registers the call with the active-call
             // state layer synchronously as soon as it's created — do not call setActiveCall
             // again here, that would double-attach listeners to the same Call object.
-            const call = await twilioRef.current.makeCall(entry.number);
+            const call = await signalwireRef.current.makeCall(entry.number);
             if (!call) {
                 activeCallsRef.current.delete(entryId);
                 directActiveEntryIdRef.current = null;
@@ -304,7 +304,7 @@ export function AutoDialer() {
 
             const sidList = activeEntries.map(e => e.callSid!).join(',');
             try {
-                const res = await fetch(`/api/twilio/ai-call/status?callSids=${encodeURIComponent(sidList)}`);
+                const res = await fetch(`/api/signalwire/ai-call/status?callSids=${encodeURIComponent(sidList)}`);
                 if (!res.ok) return;
                 const json = await res.json();
                 if (!json.success || !json.calls) return;
@@ -392,31 +392,31 @@ export function AutoDialer() {
     useEffect(() => {
         if (dialMode !== 'direct') return;
         const prev = prevCallStatusRef.current;
-        prevCallStatusRef.current = twilio.callStatus;
+        prevCallStatusRef.current = signalwire.callStatus;
 
         const activeEntryId = directActiveEntryIdRef.current;
         if (!activeEntryId) return;
 
-        if (twilio.callStatus === 'connected') {
+        if (signalwire.callStatus === 'connected') {
             setEntries(p => p.map(e =>
                 e.id === activeEntryId ? { ...e, status: 'connected', note: 'Talking on Softphone' } : e
             ));
         }
 
-        if (twilio.callStatus === 'idle' && prev !== 'idle') {
+        if (signalwire.callStatus === 'idle' && prev !== 'idle') {
             const wasConnected = prev === 'connected';
             activeCallsRef.current.delete(activeEntryId);
             directActiveEntryIdRef.current = null;
             setEntries(p => p.map(e =>
                 e.id === activeEntryId
-                    ? { ...e, status: wasConnected ? 'completed' : 'no-answer', duration: twilio.duration, note: wasConnected ? 'Completed' : 'No Answer' }
+                    ? { ...e, status: wasConnected ? 'completed' : 'no-answer', duration: signalwire.duration, note: wasConnected ? 'Completed' : 'No Answer' }
                     : e
             ));
             if (runStateRef.current === 'running') {
                 setTimeout(() => fillQueue(), delaySeconds * 1000);
             }
         }
-    }, [twilio.callStatus, twilio.duration, dialMode, delaySeconds, fillQueue]);
+    }, [signalwire.callStatus, signalwire.duration, dialMode, delaySeconds, fillQueue]);
 
     // Cleanup on unmount
     useEffect(() => () => {
@@ -451,7 +451,7 @@ export function AutoDialer() {
 
         for (const entry of activeEntries) {
             try {
-                await fetch('/api/twilio/ai-call/cancel', {
+                await fetch('/api/signalwire/ai-call/cancel', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ callSid: entry.callSid }),
@@ -460,7 +460,7 @@ export function AutoDialer() {
         }
 
         if (dialMode === 'direct') {
-            twilioRef.current.hangup();
+            signalwireRef.current.hangup();
         }
 
         activeCallsRef.current.clear();
@@ -493,7 +493,7 @@ export function AutoDialer() {
     const handleCancelEntry = async (entry: DialEntry) => {
         if (entry.callSid) {
             try {
-                await fetch('/api/twilio/ai-call/cancel', {
+                await fetch('/api/signalwire/ai-call/cancel', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ callSid: entry.callSid }),

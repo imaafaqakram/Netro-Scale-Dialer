@@ -6,7 +6,7 @@ import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { GlobalDialerFAB } from './GlobalDialerFAB';
 import { IncomingCallBanner, ActiveCallPopup } from '@/components/Calls';
-import { useTwilio } from '@/contexts/TwilioContext';
+import { useSignalWire } from '@/contexts/SignalWireContext';
 import styles from './AppLayout.module.css';
 
 type CallFilter = 'all' | 'incoming' | 'outgoing' | 'missed';
@@ -22,16 +22,16 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children, onAccessibilityClick, callFilter, onCallFilterChange, deviceStatus: propDeviceStatus, error: propError, user }: AppLayoutProps) {
-    const twilio = useTwilio();
+    const signalwire = useSignalWire();
     const pathname = usePathname();
     const [sidebarOpen, setSidebarOpen] = useState(false);
 
     // Use props if provided, otherwise fall back to context
-    const deviceStatus = propDeviceStatus || twilio.deviceStatus;
-    const error = propError !== undefined ? propError : twilio.deviceError;
+    const deviceStatus = propDeviceStatus || signalwire.deviceStatus;
+    const error = propError !== undefined ? propError : signalwire.deviceError;
 
-    const isOnCall = twilio.callStatus === 'connected' || twilio.callStatus === 'connecting' || twilio.callStatus === 'ringing';
-    const displayNumber = twilio.remoteNumber || 'Unknown';
+    const isOnCall = signalwire.callStatus === 'connected' || signalwire.callStatus === 'connecting' || signalwire.callStatus === 'ringing';
+    const displayNumber = signalwire.remoteNumber || 'Unknown';
 
     // Is current route the main dialer page? If yes, don't show the duplicate floating dialer FAB
     const isMainDialerPage = pathname === '/' || pathname === '/calls';
@@ -80,16 +80,16 @@ export function AppLayout({ children, onAccessibilityClick, callFilter, onCallFi
                 />
 
                 {/* Global Incoming Call Banner */}
-                {twilio.incomingCall && !twilio.activeCall && (
+                {signalwire.incomingCall && !signalwire.activeCall && (
                     <IncomingCallBanner
                         callerNumber={
-                            twilio.incomingCallInfo?.customerNumber
-                            || (twilio.incomingCall.parameters as { From?: string }).From
+                            signalwire.incomingCallInfo?.customerNumber
+                            || (signalwire.incomingCall.parameters as { From?: string }).From
                             || 'Unknown'
                         }
-                        leadName={twilio.incomingCallInfo?.leadName}
-                        onAccept={twilio.acceptIncomingCall}
-                        onReject={twilio.rejectIncomingCall}
+                        leadName={signalwire.incomingCallInfo?.leadName}
+                        onAccept={signalwire.acceptIncomingCall}
+                        onReject={signalwire.rejectIncomingCall}
                     />
                 )}
 
@@ -97,12 +97,12 @@ export function AppLayout({ children, onAccessibilityClick, callFilter, onCallFi
                 {isOnCall && (
                     <ActiveCallPopup
                         remoteNumber={displayNumber}
-                        displayName={twilio.callerDisplayName || undefined}
-                        duration={twilio.duration}
-                        isMuted={twilio.isMuted}
-                        onMuteToggle={twilio.toggleMute}
-                        onHangup={twilio.hangup}
-                        onDigit={twilio.sendDTMF}
+                        displayName={signalwire.callerDisplayName || undefined}
+                        duration={signalwire.duration}
+                        isMuted={signalwire.isMuted}
+                        onMuteToggle={signalwire.toggleMute}
+                        onHangup={signalwire.hangup}
+                        onDigit={signalwire.sendDTMF}
                     />
                 )}
 
