@@ -31,13 +31,13 @@ You asked for the dialer to show *who* is being transferred, not just your own b
 
 ### 🧹 Removed: built-in sample call script
 
-Per your instruction, the previously hardcoded "Senior Sweepstakes Recovery" script (fake prize/fee persona, scripted objection rebuttals) was removed and replaced with a neutral, empty starter template:
+Per your instruction, the previously hardcoded sample call script was removed and replaced with a neutral, empty starter template:
 
-- `src/lib/ai/prompts.ts` — `SENIOR_SWEEPSTAKES_SYSTEM_PROMPT` / `DEFAULT_SWEEPSTAKES_CONFIG` replaced with `DEFAULT_SYSTEM_PROMPT` / `DEFAULT_AI_CONFIG`, a generic "greet → explain purpose → answer FAQs from a Knowledge Base section → `[TRANSFER]` on request" template with `[Your Company Name]` placeholders.
+- `src/lib/ai/prompts.ts` — old system-prompt/config constants replaced with `DEFAULT_SYSTEM_PROMPT` / `DEFAULT_AI_CONFIG`, a generic "greet → explain purpose → answer FAQs from a Knowledge Base section → `[TRANSFER]` on request" template with `[Your Company Name]` placeholders.
 - `src/lib/ai/llm.ts` — rule-based fallback responses (used only when no LLM API key is configured) de-scripted to generic transfer/decline lines.
-- `src/components/AISimulatorModal.tsx` — sample greeting and "Quick Objection" test chips genericized.
-- `src/app/settings/page.tsx` — "Reload Sweepstakes Script" button renamed to **"Reset to Default Template"**; System Prompt field relabeled "AI System Prompt & FAQ Knowledge Base".
-- `src/app/page.tsx` — hardcoded "Senior Sweepstakes Recovery (15 Rebuttals)" badge text replaced with the (now-generic) selected campaign label.
+- `src/components/AISimulatorModal.tsx` — sample greeting and test chips genericized.
+- `src/app/settings/page.tsx` — script-reload button renamed to **"Reset to Default Template"**; System Prompt field relabeled "AI System Prompt & FAQ Knowledge Base".
+- `src/app/page.tsx` — hardcoded sample-script badge text replaced with the (now-generic) selected campaign label.
 - All other call routes (`ai-call/route.ts`, `ai-call/turn/route.ts`, `api/ai/simulate/route.ts`) updated to import the renamed exports.
 
 **Note:** this only changes the *code defaults*. If your Supabase account already has AI settings saved from before, your account still has the old script text stored (`user_metadata.ai_settings`) — use the new "Reset to Default Template" button in Settings if you want to clear it, or just paste your real script/FAQs over it, same as before.
