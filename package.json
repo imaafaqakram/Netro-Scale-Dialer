@@ -8,7 +8,6 @@
     "start": "node --max-http-header-size=65536 node_modules/next/dist/bin/next start"
   },
   "dependencies": {
-    "@signalwire/compatibility-api": "^3.2.0",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.94.0",
     "jssip": "^3.13.8",

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSignalWireClient } from '@/lib/signalwire/restClient';
+import { fetchCall, terminateCall } from '@/lib/signalwire/restClient';
 import { updateCall, getCall, getAllActiveCalls, LiveAICall } from '@/lib/ai/callStore';
 import { createSupabaseAdmin } from '@/lib/supabase/admin';
 import { upsertCallHistory, CallHistoryStatus } from '@/lib/callHistory';
@@ -78,8 +78,7 @@ export async function POST(request: NextRequest) {
 
                 // Terminate call on SignalWire's side so the queue advances immediately
                 try {
-                    const client = getSignalWireClient();
-                    await client.calls(callSid).update({ status: 'completed' });
+                    await terminateCall(callSid);
                 } catch (e) {
                     console.warn(`[AI Call AMD] Error terminating voicemail call ${callSid}:`, e);
                 }
@@ -194,8 +193,7 @@ export async function GET(request: NextRequest) {
             // If not found in memory, try fetching live status from SignalWire's REST API
             if (!call || call.status === 'initiated' || call.status === 'ringing') {
                 try {
-                    const client = getSignalWireClient();
-                    const swCall = await client.calls(callSid).fetch();
+                    const swCall = await fetchCall(callSid);
 
                     let mappedStatus: LiveAICall['status'] = 'in-progress';
                     if (swCall.status === 'queued') mappedStatus = 'initiated';

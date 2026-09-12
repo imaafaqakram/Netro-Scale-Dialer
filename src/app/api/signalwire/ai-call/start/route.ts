@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSignalWireClient } from '@/lib/signalwire/restClient';
+import { createCall } from '@/lib/signalwire/restClient';
 import { createClient } from '@/lib/supabase/server';
 import { getPublicAppUrl } from '@/lib/url';
 import { registerCall } from '@/lib/ai/callStore';
@@ -42,20 +42,18 @@ export async function POST(request: NextRequest) {
 
         console.log(`[AI Call Start] agentUserId resolved to: ${userId}`);
 
-        const client = getSignalWireClient();
         const appUrl = await getPublicAppUrl(request);
 
         const aiWebhookUrl = `${appUrl}/api/signalwire/ai-call?agentUserId=${encodeURIComponent(userId)}&callerId=${encodeURIComponent(cleanCallerId)}&leadName=${encodeURIComponent(leadName)}&leadId=${encodeURIComponent(leadId)}`;
 
         console.log(`[AI Call Start] Dialing customer ${cleanTo} from ${cleanCallerId} with webhook: ${aiWebhookUrl}`);
 
-        const call = await client.calls.create({
+        const call = await createCall({
             to: cleanTo,
             from: cleanCallerId,
             url: aiWebhookUrl,
-            machineDetection: 'Enable',
+            machineDetection: true,
             machineDetectionTimeout: 20,
-            asyncAmd: 'true',
             asyncAmdStatusCallback: `${appUrl}/api/signalwire/ai-call/status?agentUserId=${encodeURIComponent(userId)}&type=amd`,
             statusCallback: `${appUrl}/api/signalwire/ai-call/status?agentUserId=${encodeURIComponent(userId)}&leadName=${encodeURIComponent(leadName)}&leadId=${encodeURIComponent(leadId)}`,
             statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],

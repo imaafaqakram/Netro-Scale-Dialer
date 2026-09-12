@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { getSignalWireClient } from '@/lib/signalwire/restClient'
+import { fetchCall, listRecentRecordings } from '@/lib/signalwire/restClient'
 import { getSignalWireConfig } from '@/lib/signalwire/config'
 
 async function createSupabaseServer() {
@@ -77,8 +77,6 @@ export async function GET(request: NextRequest) {
  */
 async function syncSignalWireRecordings(supabase: ReturnType<typeof createServerClient>, userId: string) {
     try {
-        const client = getSignalWireClient()
-
         // Get user's phone numbers
         const { data: phoneNumbers } = await supabase
             .from('user_phone_numbers')
@@ -101,7 +99,7 @@ async function syncSignalWireRecordings(supabase: ReturnType<typeof createServer
         const fourteenDaysAgo = new Date()
         fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
 
-        const recordings = await client.recordings.list({
+        const recordings = await listRecentRecordings({
             dateCreatedAfter: fourteenDaysAgo,
             limit: 50,
         })
@@ -126,7 +124,7 @@ async function syncSignalWireRecordings(supabase: ReturnType<typeof createServer
             if (rec.status !== 'completed') continue
 
             try {
-                const call = await client.calls(rec.callSid).fetch()
+                const call = await fetchCall(rec.call_sid)
                 const from = call.from || ''
                 const to = call.to || ''
                 const fromDigits = from.replace(/\D/g, '')
@@ -149,14 +147,14 @@ async function syncSignalWireRecordings(supabase: ReturnType<typeof createServer
                     caller_number: callerNumber,
                     recording_url: `https://${space}/api/laml/2010-04-01/Accounts/${projectId}/Recordings/${rec.sid}`,
                     recording_sid: rec.sid,
-                    call_sid: rec.callSid,
+                    call_sid: rec.call_sid,
                     duration: rec.duration ? parseInt(String(rec.duration), 10) : 0,
                     recording_type: isVoicemail ? 'voicemail' : 'call',
                     is_read: false,
-                    created_at: rec.dateCreated ? rec.dateCreated.toISOString() : new Date().toISOString(),
+                    created_at: rec.date_created ? new Date(rec.date_created).toISOString() : new Date().toISOString(),
                 })
             } catch (callErr) {
-                console.warn(`[Recordings Sync] Could not fetch call ${rec.callSid}:`, callErr)
+                console.warn(`[Recordings Sync] Could not fetch call ${rec.call_sid}:`, callErr)
                 continue
             }
         }
