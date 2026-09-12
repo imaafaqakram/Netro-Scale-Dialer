@@ -28,6 +28,9 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 if (recRes.ok) {
                     const data = await recRes.json();
                     setUnreadVoicemails(data.unreadVoicemails || 0);
+                } else {
+                    const errBody = await recRes.json().catch(() => null);
+                    console.error('[Sidebar] Failed to fetch voicemail count:', recRes.status, errBody);
                 }
 
                 // Fetch default caller ID number

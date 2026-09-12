@@ -17,7 +17,9 @@ export async function fetchSipCredentials(): Promise<SipCredentialsResponse> {
     });
 
     if (!response.ok) {
-        throw new Error(`Failed to fetch SIP credentials: ${response.status} ${response.statusText}`);
+        const body = await response.json().catch(() => null) as { error?: string; detail?: string } | null;
+        const suffix = body?.detail ? ` — ${body.detail}` : body?.error ? ` — ${body.error}` : '';
+        throw new Error(`Failed to fetch SIP credentials: ${response.status} ${response.statusText}${suffix}`);
     }
 
     return response.json();

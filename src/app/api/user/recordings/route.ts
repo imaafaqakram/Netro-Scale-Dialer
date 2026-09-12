@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
 
         if (error) {
             console.error('[Recordings] Fetch error:', error)
-            return NextResponse.json({ error: 'Failed to fetch recordings' }, { status: 500 })
+            return NextResponse.json({ error: 'Failed to fetch recordings', detail: error.message }, { status: 500 })
         }
 
         // Get unread voicemail count
@@ -66,7 +66,8 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ recordings: data || [], unreadVoicemails: count || 0 })
     } catch (error) {
         console.error('[Recordings] Error:', error)
-        return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+        const detail = error instanceof Error ? error.message : String(error)
+        return NextResponse.json({ error: 'Internal server error', detail }, { status: 500 })
     }
 }
 
