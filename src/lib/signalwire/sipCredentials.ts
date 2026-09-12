@@ -20,6 +20,16 @@ export function sipUsernameFor(userId: string): string {
     return `u${userId.replace(/-/g, '').slice(0, 24)}`;
 }
 
+async function findSipEndpointIdByUsername(username: string): Promise<string | null> {
+    const { space } = getSignalWireConfig();
+    const res = await fetch(`https://${space}/api/relay/rest/endpoints/sip`, {
+        headers: { Authorization: `Basic ${signalWireBasicAuth()}` },
+    });
+    if (!res.ok) return null;
+    const json = await res.json().catch(() => null) as { data?: Array<{ id: string; username: string }> } | null;
+    return json?.data?.find((e) => e.username === username)?.id || null;
+}
+
 async function createSignalWireSipEndpoint(username: string, password: string): Promise<void> {
     const { space } = getSignalWireConfig();
     // call_request_url is the SIP-endpoint analog of a Twilio Application's Voice
@@ -28,6 +38,13 @@ async function createSignalWireSipEndpoint(username: string, password: string): 
     // /api/signalwire/webhook used to play via the TwiML App tied to Device.connect().
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || '';
     const webhookUrl = appUrl ? `${appUrl.replace(/\/$/, '')}/api/signalwire/webhook` : undefined;
+    const body = {
+        username,
+        password,
+        caller_id: 'Netro Scale',
+        encryption: 'optional',
+        ...(webhookUrl ? { call_request_url: webhookUrl, call_request_method: 'POST' } : {}),
+    };
 
     const res = await fetch(`https://${space}/api/relay/rest/endpoints/sip`, {
         method: 'POST',
@@ -35,19 +52,37 @@ async function createSignalWireSipEndpoint(username: string, password: string): 
             Authorization: `Basic ${signalWireBasicAuth()}`,
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-            username,
-            password,
-            caller_id: 'Netro Scale',
-            encryption: 'optional',
-            ...(webhookUrl ? { call_request_url: webhookUrl, call_request_method: 'POST' } : {}),
-        }),
+        body: JSON.stringify(body),
     });
 
-    if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`Failed to create SignalWire SIP endpoint (${res.status}): ${body}`);
+    if (res.ok) return;
+
+    const errText = await res.text().catch(() => '');
+
+    // A prior attempt can leave an orphaned SignalWire endpoint with no matching
+    // Supabase row (e.g. the DB write failed after the SignalWire create
+    // succeeded) — sipUsernameFor() is deterministic, so retrying lands on the
+    // exact same username and SignalWire correctly rejects it as a duplicate.
+    // Reconcile by claiming that endpoint with our freshly generated password
+    // instead of erroring out forever on every future attempt.
+    if (res.status === 422 && errText.includes('already exists')) {
+        const existingId = await findSipEndpointIdByUsername(username);
+        if (existingId) {
+            const putRes = await fetch(`https://${space}/api/relay/rest/endpoints/sip/${existingId}`, {
+                method: 'PUT',
+                headers: {
+                    Authorization: `Basic ${signalWireBasicAuth()}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(body),
+            });
+            if (putRes.ok) return;
+            const putErrText = await putRes.text().catch(() => '');
+            throw new Error(`Failed to reclaim orphaned SignalWire SIP endpoint (${putRes.status}): ${putErrText}`);
+        }
     }
+
+    throw new Error(`Failed to create SignalWire SIP endpoint (${res.status}): ${errText}`);
 }
 
 /** Reverse lookup used by the webhook to recover which user placed an outgoing call. */
@@ -87,7 +122,12 @@ export async function getOrCreateSipCredential(userId: string): Promise<SipCrede
         .upsert({ user_id: userId, sip_username: username, sip_password: password }, { onConflict: 'user_id' });
 
     if (error) {
-        console.error('[SIP Credentials] Failed to persist new credential:', error);
+        // Must throw, not just log: a swallowed failure here leaves a real
+        // SignalWire SIP endpoint with a password only this function ever knew,
+        // now lost — every future call for this user would otherwise silently
+        // regenerate a new password and hit SignalWire's "already exists" 422
+        // forever, since sipUsernameFor() is deterministic.
+        throw new Error(`Failed to persist SIP credential: ${error.message}`);
     }
 
     return { username, password };
