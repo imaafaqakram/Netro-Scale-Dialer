@@ -30,6 +30,19 @@ interface UseSignalWireDeviceReturn {
     rejectIncomingCall: () => void;
 }
 
+// Same normalization used server-side (webhook.ts, ai-call routes) — a bare
+// 10-digit US number dialed without a country code confuses SignalWire's
+// routing (observed as an immediate "Busy" rather than actually ringing),
+// so this must happen before the number ever becomes a SIP Request-URI.
+function formatE164(phone: string): string {
+    const clean = phone.replace(/[^0-9+]/g, '');
+    if (!clean) return '';
+    if (clean.startsWith('+')) return clean;
+    if (clean.length === 10) return `+1${clean}`;
+    if (clean.length === 11 && clean.startsWith('1')) return `+${clean}`;
+    return `+${clean}`;
+}
+
 // Single shared <audio> element for remote call audio — JsSIP (unlike Twilio's
 // Device SDK) doesn't play media for you; it just hands you the underlying
 // RTCPeerConnection and expects the app to attach the remote track itself.
@@ -170,8 +183,11 @@ export function useSignalWireDevice(
 
         try {
             setStatus('busy');
-            const cleanNumber = phoneNumber.trim().replace(/[\s()-]/g, '');
-            const effectiveCallerId = callerId ? callerId.trim().replace(/[\s()-]/g, '') : '';
+            const trimmed = phoneNumber.trim().replace(/[\s()-]/g, '');
+            // Special test codes (*99 / test) dial literally; real destinations
+            // must be E.164 or SignalWire's routing treats them as invalid.
+            const cleanNumber = /^\*?\d{1,4}$|^test$/i.test(trimmed) ? trimmed : formatE164(trimmed);
+            const effectiveCallerId = callerId ? formatE164(callerId.trim().replace(/[\s()-]/g, '')) : '';
             const domain = domainRef.current;
 
             console.log('[SignalWire Device] Connecting outbound call to:', cleanNumber, 'callerId:', effectiveCallerId, 'mode:', options?.callMode);
