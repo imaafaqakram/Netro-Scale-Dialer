@@ -43,6 +43,13 @@ async function createSignalWireSipEndpoint(username: string, password: string): 
         password,
         caller_id: 'Netro Scale',
         encryption: 'optional',
+        // "default" silently answers-then-busies every outbound INVITE without
+        // ever routing to real PSTN termination or creating a Call record --
+        // "passthrough" is SignalWire's own documented value for "let this
+        // endpoint actually dial out." Found by noticing zero Call resources
+        // ever appeared in the account's call log despite full SDP negotiation
+        // completing on every attempt.
+        call_handler: 'passthrough',
         ...(webhookUrl ? { call_request_url: webhookUrl, call_request_method: 'POST' } : {}),
     };
 
