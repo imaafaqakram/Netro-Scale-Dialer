@@ -28,6 +28,10 @@ export async function POST() {
         })
     } catch (error) {
         console.error('[SIP Credentials] Error:', error)
-        return NextResponse.json({ error: 'Failed to provision SIP credentials' }, { status: 500 })
+        // Surfaced to the (already-authenticated) caller temporarily while bringing
+        // the SignalWire migration up — narrow this back to a generic message once
+        // provisioning is confirmed working end-to-end.
+        const detail = error instanceof Error ? error.message : String(error)
+        return NextResponse.json({ error: 'Failed to provision SIP credentials', detail }, { status: 500 })
     }
 }
