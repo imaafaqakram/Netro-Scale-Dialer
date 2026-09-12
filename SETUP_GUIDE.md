@@ -44,6 +44,8 @@ Unlike Twilio's short-lived JWT model, this app provisions a dedicated SIP usern
 
 > **Note:** Both the phone number's Voice URL and each user's SIP endpoint point at the same route: `/api/signalwire/webhook` — it tells inbound PSTN calls and outbound browser-originated calls apart by whether `From` looks like a SIP URI.
 
+> **Get `SIGNALWIRE_SIP_DOMAIN` right or nothing will register.** It is not just `yourspace.sip.signalwire.com` — real space domains carry a project-specific suffix (e.g. `yourspace-eb135bd8a9a9.sip.signalwire.com`). A wrong-but-plausible guess still connects and issues a real digest challenge, then rejects every correctly-computed response — indistinguishable from a bad password without protocol-level debugging. Get the exact value from Dashboard -> SIP Endpoints, or from any other SIP client already registered successfully against this space (a FreeSWITCH trunk's registrar URI, etc).
+
 ---
 
 ## Step 2: Supabase Setup
@@ -207,7 +209,7 @@ SIGNALWIRE_SPACE=yourspace.signalwire.com
 SIGNALWIRE_PROJECT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 SIGNALWIRE_API_TOKEN=PTxxxxxxxx
 SIGNALWIRE_DEFAULT_NUMBER=+1XXXXXXXXXX
-SIGNALWIRE_SIP_DOMAIN=yourspace.sip.signalwire.com
+SIGNALWIRE_SIP_DOMAIN=yourspace-xxxxxxxxxxxx.sip.signalwire.com
 
 # Required so the server can build absolute webhook URLs (SIP endpoint
 # call_request_url, phone number Voice URL callbacks) — your deployment's own
