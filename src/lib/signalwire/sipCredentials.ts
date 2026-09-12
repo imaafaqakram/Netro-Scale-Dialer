@@ -50,6 +50,12 @@ async function createSignalWireSipEndpoint(username: string, password: string): 
         // ever appeared in the account's call log despite full SDP negotiation
         // completing on every attempt.
         call_handler: 'passthrough',
+        // Left as SignalWire's default ("random"), this endpoint's outbound
+        // caller ID is chosen at random from EVERY number on the account -- on
+        // this shared space that includes the IQAAI appointment-bot's own
+        // number, so a dialer call could show (and receive callbacks on) the
+        // bot's line instead of this app's. Must always be pinned explicitly.
+        send_as: process.env.SIGNALWIRE_DEFAULT_NUMBER,
         ...(webhookUrl ? { call_request_url: webhookUrl, call_request_method: 'POST' } : {}),
     };
 
