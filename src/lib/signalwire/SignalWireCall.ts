@@ -86,7 +86,10 @@ export class SignalWireCall {
     }
 
     accept() {
-        this.session.answer({ mediaConstraints: { audio: true, video: false } });
+        this.session.answer({
+            mediaConstraints: { audio: true, video: false },
+            pcConfig: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] },
+        });
     }
 
     reject() {

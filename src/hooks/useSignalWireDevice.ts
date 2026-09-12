@@ -46,6 +46,13 @@ function getOrCreateRemoteAudioEl(): HTMLAudioElement {
 }
 
 function attachMedia(session: JsSipRTCSessionLike) {
+    // Temporary diagnostic while bringing up WebRTC media negotiation — logs the
+    // exact offer/answer SDP so an "Incompatible SDP" failure can be root-caused
+    // from real data instead of guessed at, same approach that found the SIP
+    // domain bug. Safe to remove once calls are confirmed working end-to-end.
+    (session as any).on?.('sdp', (data: { originator: string; type: string; sdp: string }) => {
+        console.log(`[SDP ${data.originator} ${data.type}]\n${data.sdp}`);
+    });
     (session as any).connection?.addEventListener?.('track', (event: RTCTrackEvent) => {
         getOrCreateRemoteAudioEl().srcObject = event.streams[0];
     });
@@ -178,6 +185,7 @@ export function useSignalWireDevice(
             const rawSession = uaRef.current.call(target, {
                 mediaConstraints: { audio: true, video: false },
                 extraHeaders,
+                pcConfig: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] },
             }) as unknown as JsSipRTCSessionLike;
 
             const call = new SignalWireCall(rawSession, { from: effectiveCallerId, to: cleanNumber });
