@@ -25,9 +25,17 @@ function isFromOurSipEndpoint(from: string): boolean {
     return from.startsWith('sip:') || from.includes('@')
 }
 
+// Handles both a bare URI ("sip:user@domain") and one wrapped with a display
+// name ("Netro Scale" <sip:user@domain>) — SignalWire's own From header format
+// for a SIP-endpoint-originated call was never empirically confirmed to always
+// be the bare form assumed here originally, and this endpoint's own caller_id
+// config ("Netro Scale", see sipCredentials.ts) is exactly the kind of value
+// that produces the wrapped form.
 function sipUsernameFromUri(uri: string): string {
-    const withoutScheme = uri.replace(/^sip:/, '')
-    return withoutScheme.split('@')[0]
+    const angleMatch = uri.match(/<([^>]+)>/)
+    const inner = angleMatch ? angleMatch[1] : uri
+    const withoutScheme = inner.replace(/^sip:/, '')
+    return withoutScheme.split('@')[0].split(';')[0]
 }
 
 // Clean and ensure phone numbers are strictly in E.164 format (+1XXXXXXXXXX)
@@ -141,8 +149,12 @@ export async function GET(request: NextRequest) {
 }
 
 async function handleOutgoingCall(to: string, from: string, params: Record<string, string>, request: NextRequest): Promise<NextResponse> {
+    // Prefer the browser's own X-User-Id header (set in useSignalWireDevice.ts's
+    // makeCall) — a direct, unambiguous Supabase user id. Falls back to parsing the
+    // SIP From header only if that custom header wasn't forwarded through.
+    const headerUserId = (params['X-User-Id'] || '').trim()
     const sipUsername = isFromOurSipEndpoint(from) ? sipUsernameFromUri(from) : ''
-    const userId = sipUsername ? (await getUserIdForSipUsername(sipUsername)) || '' : ''
+    const userId = headerUserId || (sipUsername ? (await getUserIdForSipUsername(sipUsername)) || '' : '')
     const appUrl = await getPublicAppUrl(request)
     // Custom SIP header set by the browser (X-Call-Mode) if SignalWire forwards
     // it through to this webhook's params; falls back to 'direct' (this app's

@@ -30,11 +30,23 @@ export interface UpsertCallHistoryParams {
 // (initiated -> ringing -> answered -> completed); this upserts by call_sid so
 // the row is created once and then progressively updated to its final state,
 // never duplicated.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function upsertCallHistory(
     supabase: SupabaseClient,
     params: UpsertCallHistoryParams
 ): Promise<void> {
     if (!params.callSid || !params.userId) return;
+
+    // user_id is a UUID NOT NULL FK to auth.users — a non-UUID value (e.g. the
+    // 'user' placeholder used when a caller's real id couldn't be resolved) would
+    // otherwise fail this upsert at the database level and get silently swallowed
+    // by the catch below, making a call vanish from history with no visible error
+    // anywhere. Fail loudly here instead so it shows up in logs immediately.
+    if (!UUID_RE.test(params.userId)) {
+        console.error(`[CallHistory] Refusing to upsert ${params.callSid}: userId "${params.userId}" is not a real user UUID (resolution likely failed upstream).`);
+        return;
+    }
 
     // Resolve the caller's org so org_admins get oversight visibility into this
     // row (see supabase-migration-004-multi-tenant.sql's "Org admins view

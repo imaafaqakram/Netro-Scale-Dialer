@@ -1,8 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { generateAIResponse, ChatMessage } from '@/lib/ai/llm';
 import { DEFAULT_SYSTEM_PROMPT } from '@/lib/ai/prompts';
-import { updateCall, addCallTurn } from '@/lib/ai/callStore';
+import { updateCall, CallTurn } from '@/lib/ai/callStore';
 import { getPublicAppUrl } from '@/lib/url';
+
+// The round-tripped `history` param (not the store) is this route's real source of
+// truth for conversation continuity across turns/instances — this just reshapes it
+// for the telemetry store's slightly different turn shape (adds a timestamp).
+function toCallTurns(history: ChatMessage[]): CallTurn[] {
+    const now = Date.now();
+    return history.map((m) => ({ role: m.role as CallTurn['role'], text: m.content, timestamp: now }));
+}
 import { sipUsernameFor } from '@/lib/signalwire/sipCredentials';
 import { getSignalWireConfig } from '@/lib/signalwire/config';
 
@@ -135,8 +143,8 @@ async function handleTurn(request: NextRequest): Promise<NextResponse> {
         if (speechResult && isVoicemailGreeting(speechResult)) {
             console.log(`[AI Turn] Answering machine detected in speech for ${callSid}: "${speechResult}"`);
             if (callSid) {
-                updateCall(callSid, { status: 'voicemail', currentStage: 'voicemail', answeredBy: 'machine_start' });
-                addCallTurn(callSid, { role: 'user', text: `[Voicemail]: ${speechResult}`, timestamp: Date.now() }, 'voicemail');
+                const turns = [...toCallTurns(history), { role: 'user' as const, text: `[Voicemail]: ${speechResult}`, timestamp: Date.now() }];
+                after(() => updateCall(callSid, { status: 'voicemail', currentStage: 'voicemail', answeredBy: 'machine_start', turns }));
             }
 
             return twimlResponse(`
@@ -151,7 +159,7 @@ async function handleTurn(request: NextRequest): Promise<NextResponse> {
         if (!speechResult) {
             if (turnCount >= 4) {
                 if (callSid) {
-                    updateCall(callSid, { transferredToSoftphone: true, currentStage: 'transferring' });
+                    after(() => updateCall(callSid, { transferredToSoftphone: true, currentStage: 'transferring' }));
                 }
                 return twimlResponse(buildTransferTwiml({
                     sayVoice: 'Polly.Joanna',
@@ -172,15 +180,11 @@ async function handleTurn(request: NextRequest): Promise<NextResponse> {
             `);
         }
 
-        // 3. Record customer turn in history and callStore
+        // 3. Record customer turn. The round-tripped `history` param is what actually
+        // carries conversation continuity forward (see toCallTurns() above) — the
+        // callStore write for this turn is deferred and combined with the assistant's
+        // reply below, once both halves of the turn are known.
         history.push({ role: 'user', content: speechResult });
-        if (callSid) {
-            addCallTurn(callSid, {
-                role: 'user',
-                text: speechResult,
-                timestamp: Date.now(),
-            }, 'pitching');
-        }
 
         // 4. Look up user's custom AI settings and API keys from Supabase
         let systemPrompt = DEFAULT_SYSTEM_PROMPT;
@@ -216,17 +220,21 @@ async function handleTurn(request: NextRequest): Promise<NextResponse> {
         console.log(`[AI Turn] AI generated response (via ${aiResponse.provider}):`, aiResponse.text, 'shouldTransfer:', aiResponse.shouldTransfer);
 
         history.push({ role: 'assistant', content: aiResponse.text });
-        
+
         const stage = aiResponse.shouldTransfer ? 'transferring' : (turnCount >= 2 ? 'objection' : 'pitching');
         if (callSid) {
-            addCallTurn(callSid, {
-                role: 'assistant',
-                text: aiResponse.text,
-                timestamp: Date.now(),
-            }, stage);
-            if (aiResponse.shouldTransfer) {
-                updateCall(callSid, { transferredToSoftphone: true, currentStage: 'transferring' });
-            }
+            // Single deferred write covering both halves of this turn (user + AI reply)
+            // — runs after the TwiML response is already on its way back to SignalWire,
+            // so it adds zero latency to what the caller actually hears.
+            after(() =>
+                updateCall(callSid, {
+                    turns: toCallTurns(history),
+                    currentStage: stage,
+                    lastSpeech: speechResult,
+                    lastAiReply: aiResponse.text,
+                    ...(aiResponse.shouldTransfer ? { transferredToSoftphone: true } : {}),
+                })
+            );
         }
 
         // 6. Transfer to softphone if triggered

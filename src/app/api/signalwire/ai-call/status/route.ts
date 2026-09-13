@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
                 updates.currentStage = 'greeting';
             }
         } else if (callStatus === 'completed') {
-            const current = getCall(callSid);
+            const current = await getCall(callSid);
             // Preserve voicemail status if detected
             if (current?.status !== 'voicemail' && updates.status !== 'voicemail') {
                 updates.status = 'completed';
@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
             updates.agentUserId = agentUserId;
         }
 
-        const merged = updateCall(callSid, updates);
+        const merged = await updateCall(callSid, updates);
 
         // Mirror terminal states into the permanent call_history table — the in-memory
         // callStore above is telemetry for the live-call UI only (it's wiped on every
@@ -188,7 +188,7 @@ export async function GET(request: NextRequest) {
 
         // 1. Single Call Sid Query
         if (callSid) {
-            let call = getCall(callSid);
+            let call = await getCall(callSid);
 
             // If not found in memory, try fetching live status from SignalWire's REST API
             if (!call || call.status === 'initiated' || call.status === 'ringing') {
@@ -206,12 +206,12 @@ export async function GET(request: NextRequest) {
                     else if (swCall.status === 'canceled') mappedStatus = 'canceled';
 
                     const duration = parseInt(swCall.duration || '0', 10);
-                    call = updateCall(callSid, {
+                    call = (await updateCall(callSid, {
                         status: mappedStatus,
                         duration: duration || (call?.duration || 0),
                         to: swCall.to,
                         from: swCall.from,
-                    }) || undefined;
+                    })) || undefined;
                 } catch (e) {
                     console.warn(`[AI Status API] Could not fetch SignalWire call ${callSid}:`, e);
                 }
@@ -229,18 +229,17 @@ export async function GET(request: NextRequest) {
             const sidList = callSids.split(',').map(s => s.trim()).filter(Boolean);
             const results: Record<string, LiveAICall> = {};
 
-            for (const sid of sidList) {
-                const call = getCall(sid);
-                if (call) {
-                    results[sid] = call;
-                }
-            }
+            const fetched = await Promise.all(sidList.map((sid) => getCall(sid)));
+            sidList.forEach((sid, i) => {
+                const call = fetched[i];
+                if (call) results[sid] = call;
+            });
 
             return NextResponse.json({ success: true, calls: results });
         }
 
         // 3. All Active Calls Query
-        const all = getAllActiveCalls(agentUserId || undefined);
+        const all = await getAllActiveCalls(agentUserId || undefined);
         return NextResponse.json({ success: true, calls: all });
     } catch (err: any) {
         return NextResponse.json({ error: err.message }, { status: 500 });

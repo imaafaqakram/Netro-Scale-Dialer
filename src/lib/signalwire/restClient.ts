@@ -83,6 +83,16 @@ export async function fetchCall(sid: string): Promise<SignalWireCall> {
     return laml('GET', `/Calls/${encodeURIComponent(sid)}.json`);
 }
 
+export interface SignalWireBalance {
+    balance: string;
+    currency: string;
+}
+
+/** Twilio-compatible Balance resource — same account this space's calls/numbers bill against. */
+export async function getAccountBalance(): Promise<SignalWireBalance> {
+    return laml('GET', '/Balance.json');
+}
+
 export async function terminateCall(sid: string): Promise<void> {
     await laml('POST', `/Calls/${encodeURIComponent(sid)}.json`, { Status: 'completed' });
 }

@@ -175,6 +175,10 @@
     padding: 12px;
 }
 
+.balanceCard {
+    margin-bottom: 8px;
+}
+
 .lineHeader {
     display: flex;
     align-items: center;

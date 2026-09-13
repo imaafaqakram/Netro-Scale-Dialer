@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-09-13 — Fix call history never saving + SignalWire balance widget
+
+### 🐛 Root cause: AI-call telemetry store didn't survive serverless
+
+- **`call_history` rows were never being written for AI-agent calls.** [`src/lib/ai/callStore.ts`](src/lib/ai/callStore.ts) kept live call state (status, transcript, which user placed the call) in a plain `Map` attached to `global` — a trick that only works for surviving hot-reload in local dev. On Vercel, a single call's lifecycle (`/ai-call/start` → the greeting → one `/ai-call/turn` hit per turn → the final `/ai-call/status`) is several separate HTTP requests that can each land on a different, independent serverless instance with its own empty Map. The terminal status callback routinely saw a call it had never registered, fell back to a placeholder identity, and every `call_history` write for that identity failed silently — recordings were equally affected, since they're gated by the same request path.
+- **Fixed by replacing the in-memory Map with a real Supabase-backed store** (new `ai_call_sessions` table — run `supabase-migration-006-ai-call-sessions.sql` in the Supabase SQL Editor). Same function names/shapes as before (`registerCall`, `updateCall`, `getCall`, `getAllActiveCalls`), now `async`.
+- **To avoid adding latency to the live conversation**, the per-turn writes in [`src/app/api/signalwire/ai-call/turn/route.ts`](src/app/api/signalwire/ai-call/turn/route.ts) and the greeting write in [`ai-call/route.ts`](src/app/api/signalwire/ai-call/route.ts) now run via Next's `after()` — scheduled to complete in the background *after* the TwiML response is already on its way back to SignalWire, so the caller never waits on a Supabase round-trip mid-conversation. The two writes-per-turn (user turn, AI reply) were also combined into one.
+- **`upsertCallHistory`** ([`src/lib/callHistory.ts`](src/lib/callHistory.ts)) now validates `userId` looks like a real UUID before writing, and logs clearly instead of silently swallowing the failure if a caller ever passes the `'user'` placeholder again — this exact failure mode should never take hours to diagnose a second time.
+- **Hardened the direct-dial webhook's own user resolution** ([`src/app/api/signalwire/webhook/route.ts`](src/app/api/signalwire/webhook/route.ts)): it was parsing the calling user's identity out of the SIP `From` header assuming a bare `sip:user@domain` form, which breaks if SignalWire wraps it with the endpoint's configured display name (`"Netro Scale" <sip:user@domain>`). The browser now sends its own Supabase user id directly via a new `X-User-Id` SIP header ([`useSignalWireDevice.ts`](src/hooks/useSignalWireDevice.ts)), with the header-parsing kept as a fallback (now handles the wrapped form too).
+- `package-lock.json` regenerated — it had gone stale during the Twilio→SignalWire migration and still listed `@twilio/voice-sdk`/`twilio` and the old package name.
+
+### ✨ New: SignalWire account balance in the sidebar
+
+- Admins (org admin or super admin) now see a live SignalWire balance card in the sidebar footer, next to Active Caller ID. New `GET /api/admin/balance` route ([`src/app/api/admin/balance/route.ts`](src/app/api/admin/balance/route.ts)), same admin-only gating as `/api/admin/numbers`. Backed by a new `getAccountBalance()` in [`restClient.ts`](src/lib/signalwire/restClient.ts) (Twilio-compatible `/Balance.json`).
+
+### ✅ Verification
+
+- `npx tsc --noEmit` — clean.
+- `npm run build` — clean production build, no errors, `/api/admin/balance` present in the route list.
+- **Not yet confirmed against a live call** — recommend one more AI-agent test call after running the migration, then check Call History shows a completed row and Recordings shows the recording (if enabled).
+
 ## 2026-08-17 (2) — Stop caching API keys in the browser
 
 ### 🔒 Security fix

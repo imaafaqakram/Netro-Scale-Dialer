@@ -18,6 +18,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     const [defaultNumber, setDefaultNumber] = useState<string>('');
     const [canSeeAdmin, setCanSeeAdmin] = useState(false);
     const [canSeeSuperAdmin, setCanSeeSuperAdmin] = useState(false);
+    const [balance, setBalance] = useState<{ amount: string; currency: string } | null>(null);
+    const [balanceError, setBalanceError] = useState(false);
 
     // Fetch real unread voicemails and default caller ID
     useEffect(() => {
@@ -47,10 +49,26 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 // The links are just visibility — every /admin and /superadmin
                 // route re-checks authorization itself server-side regardless.
                 const roleRes = await fetch('/api/user/role');
+                let isAdmin = false;
                 if (roleRes.ok) {
                     const data = await roleRes.json();
-                    setCanSeeAdmin(!!data.isSuperAdmin || data.orgRole === 'org_admin');
+                    isAdmin = !!data.isSuperAdmin || data.orgRole === 'org_admin';
+                    setCanSeeAdmin(isAdmin);
                     setCanSeeSuperAdmin(!!data.isSuperAdmin);
+                }
+
+                // SignalWire account balance — billing info, admin-only (route itself
+                // also enforces this; skipping the fetch for non-admins just avoids a
+                // guaranteed 403).
+                if (isAdmin) {
+                    const balRes = await fetch('/api/admin/balance');
+                    if (balRes.ok) {
+                        const data = await balRes.json();
+                        setBalance({ amount: data.balance, currency: data.currency });
+                        setBalanceError(false);
+                    } else {
+                        setBalanceError(true);
+                    }
                 }
             } catch { }
         };
@@ -132,8 +150,28 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 </div>
             </nav>
 
-            {/* Sidebar Bottom: Active Line Info */}
+            {/* Sidebar Bottom: Balance (admins only) + Active Line Info */}
             <div className={styles.sidebarFooter}>
+                {canSeeAdmin && (balance || balanceError) && (
+                    <div className={`${styles.activeLineCard} ${styles.balanceCard}`}>
+                        <div className={styles.lineHeader}>
+                            <span
+                                className={styles.lineDot}
+                                style={balanceError || (balance && parseFloat(balance.amount) <= 5)
+                                    ? { background: 'var(--color-danger)' }
+                                    : undefined}
+                            />
+                            <span className={styles.lineTitle}>SignalWire Balance</span>
+                        </div>
+                        <div className={styles.lineNumber}>
+                            {balanceError
+                                ? 'Unavailable'
+                                : balance
+                                    ? `${balance.currency.toUpperCase()} $${parseFloat(balance.amount).toFixed(2)}`
+                                    : '—'}
+                        </div>
+                    </div>
+                )}
                 <div className={styles.activeLineCard}>
                     <div className={styles.lineHeader}>
                         <span className={styles.lineDot} />

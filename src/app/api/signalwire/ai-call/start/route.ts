@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
         });
 
         // Register in live telemetry store
-        registerCall({
+        await registerCall({
             callSid: call.sid,
             agentUserId: userId,
             to: cleanTo,

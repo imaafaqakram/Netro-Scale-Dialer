@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { generateInitialGreeting, DEFAULT_AI_CONFIG } from '@/lib/ai/prompts';
-import { updateCall, addCallTurn } from '@/lib/ai/callStore';
+import { updateCall } from '@/lib/ai/callStore';
 import { getPublicAppUrl } from '@/lib/url';
 
 function escapeXml(unsafe: string): string {
@@ -75,7 +75,9 @@ async function handleEntry(request: NextRequest): Promise<NextResponse> {
         // If SignalWire's AMD already signaled voicemail on connect
         if (answeredBy.startsWith('machine') || answeredBy === 'fax') {
             if (callSid) {
-                updateCall(callSid, { status: 'voicemail', currentStage: 'voicemail', answeredBy: answeredBy as any });
+                // after(): don't make SignalWire wait on this write before it gets
+                // the Hangup TwiML — see the identical note below.
+                after(() => updateCall(callSid, { status: 'voicemail', currentStage: 'voicemail', answeredBy: answeredBy as any }));
             }
             return twimlResponse(`
                 <Response>
@@ -115,18 +117,19 @@ async function handleEntry(request: NextRequest): Promise<NextResponse> {
             greeting = `Hi, is this ${leadName}? ${greeting}`;
         }
 
-        // Update live call store with status and initial greeting turn
+        // Update live call store with status and initial greeting turn. Backgrounded
+        // via after(): this is telemetry, not something the caller's Gather/Say
+        // response should ever wait on — Vercel still guarantees it completes before
+        // the function instance is torn down, unlike a bare unawaited promise.
         if (callSid) {
-            updateCall(callSid, {
-                status: 'in-progress',
-                currentStage: 'greeting',
-                leadName: leadName || undefined,
-            });
-            addCallTurn(callSid, {
-                role: 'assistant',
-                text: greeting,
-                timestamp: Date.now(),
-            }, 'greeting');
+            after(() =>
+                updateCall(callSid, {
+                    status: 'in-progress',
+                    currentStage: 'greeting',
+                    leadName: leadName || undefined,
+                    turns: [{ role: 'assistant', text: greeting, timestamp: Date.now() }],
+                })
+            );
         }
 
         const turnActionUrl = `${appUrl}/api/signalwire/ai-call/turn?agentUserId=${encodeURIComponent(agentUserId)}&amp;callerId=${encodeURIComponent(callerId)}&amp;leadName=${encodeURIComponent(leadName)}&amp;turnCount=1`;

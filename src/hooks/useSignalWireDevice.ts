@@ -83,6 +83,7 @@ export function useSignalWireDevice(
 
     const uaRef = useRef<JsSIP.UA | null>(null);
     const domainRef = useRef<string>('');
+    const identityRef = useRef<string>('');
     const isDestroyed = useRef(false);
 
     const initializeDevice = useCallback(async () => {
@@ -98,6 +99,7 @@ export function useSignalWireDevice(
             setSipIdentity(creds.identity);
             try { localStorage.setItem('sip_identity', creds.identity); } catch {}
             domainRef.current = creds.domain;
+            identityRef.current = creds.identity;
 
             if (uaRef.current) {
                 uaRef.current.stop();
@@ -196,6 +198,13 @@ export function useSignalWireDevice(
             const extraHeaders = [
                 `X-Call-Mode: ${options?.callMode || 'direct'}`,
                 effectiveCallerId ? `X-Caller-Id: ${effectiveCallerId}` : null,
+                // Lets the webhook resolve which user placed this call directly, instead
+                // of parsing this SIP UA's own From header (fragile — e.g. breaks if
+                // SignalWire wraps it as `"Netro Scale" <sip:user@domain>` instead of a
+                // bare URI). See isFromOurSipEndpoint/sipUsernameFromUri in
+                // src/app/api/signalwire/webhook/route.ts, which still falls back to
+                // that parsing if this header doesn't arrive.
+                identityRef.current ? `X-User-Id: ${identityRef.current}` : null,
             ].filter(Boolean) as string[];
 
             const rawSession = uaRef.current.call(target, {
