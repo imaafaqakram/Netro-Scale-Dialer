@@ -72,6 +72,14 @@ re-run):
 3. `supabase-migration-002-fixes.sql`
 4. `supabase-migration-003-call-history.sql`
 5. `supabase-migration-004-multi-tenant.sql`
+6. `supabase-migration-005-signalwire-sip.sql` — **required for calling to work
+   at all** after the Twilio → SignalWire migration. Without it, every browser
+   softphone SIP-credential request (`/api/signalwire/sip-credentials`,
+   `/api/mobile/token`) fails with `relation "user_sip_credentials" does not
+   exist` and the dialer can't register or place/receive any call.
+7. `supabase-migration-006-ai-call-sessions.sql` — required for the AI voice
+   agent. Without it, AI-agent calls fail to register their telemetry (silently,
+   per call site) and never get written to `call_history`.
 
 This creates:
 - `user_phone_numbers` table (with voice feature columns)
@@ -79,6 +87,8 @@ This creates:
 - `call_history` table (permanent server-side call log)
 - `organizations` / `organization_members` / `super_admins` tables (multi-tenant
   roles — see 2.5 below)
+- `user_sip_credentials` table (per-user SignalWire SIP username/password)
+- `ai_call_sessions` table (live AI-agent call telemetry)
 - RLS policies for security, scoped per-organization
 
 > **If you already ran `supabase-migration.sql` before today:** you must also run
